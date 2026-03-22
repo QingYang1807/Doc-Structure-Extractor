@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { db } from "@workspace/db";
 import { extractionJobsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import {
   ExtractDocumentBody,
   GetHistoryQueryParams,
@@ -155,12 +155,12 @@ router.get("/history", async (req, res) => {
     const jobs = await db
       .select()
       .from(extractionJobsTable)
-      .orderBy(extractionJobsTable.createdAt)
+      .orderBy(desc(extractionJobsTable.createdAt))
       .limit(limit ?? 20);
 
     const total = await db.$count(extractionJobsTable);
 
-    const items = jobs.reverse().map((job) => ({
+    const items = jobs.map((job) => ({
       id: job.id,
       template: job.template,
       textPreview: job.textPreview,

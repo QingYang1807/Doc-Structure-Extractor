@@ -6,10 +6,17 @@ import { Layout } from "@/components/layout";
 import { Button, Card, Textarea, Input, Badge } from "@/components/ui-elements";
 import { 
   FileText, Upload, Sparkles, AlertCircle, FileJson, 
-  Table as TableIcon, Download, CheckCircle2, ChevronRight 
+  Table as TableIcon, Download, CheckCircle2
 } from "lucide-react";
 import Papa from "papaparse";
 import { downloadFile } from "@/lib/utils";
+import * as pdfjsLib from "pdfjs-dist";
+import mammoth from "mammoth";
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 const TEMPLATES: { id: ExtractRequestTemplate; label: string; description: string }[] = [
   { id: "contract", label: "合同关键信息", description: "抽取甲方、乙方、金额、日期等" },
@@ -19,29 +26,70 @@ const TEMPLATES: { id: ExtractRequestTemplate; label: string; description: strin
   { id: "custom", label: "自定义字段", description: "指定需要抽取的具体字段名称" },
 ];
 
+async function extractTextFromFile(file: File): Promise<string> {
+  const name = file.name.toLowerCase();
+
+  if (name.endsWith(".pdf") || file.type === "application/pdf") {
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+    const pages: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .filter((item): item is pdfjsLib.TextItem => "str" in item)
+        .map((item) => item.str)
+        .join(" ");
+      pages.push(pageText);
+    }
+    return pages.join("\n\n");
+  }
+
+  if (
+    name.endsWith(".docx") ||
+    file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ) {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return result.value;
+  }
+
+  return await file.text();
+}
+
 export default function Home() {
   const [text, setText] = useState("");
   const [template, setTemplate] = useState<ExtractRequestTemplate>("general");
   const [customFieldsStr, setCustomFieldsStr] = useState("");
   const [activeTab, setActiveTab] = useState<"visual" | "json">("visual");
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const extractMutation = useExtractDocument();
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
-    if (file.type !== "text/plain" && !file.name.endsWith('.md') && !file.name.endsWith('.csv')) {
-      alert("目前仅支持纯文本文件 (.txt, .md, .csv)");
+    setFileError(null);
+    const name = file.name.toLowerCase();
+    const supported = name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".pdf") || name.endsWith(".docx");
+    if (!supported) {
+      setFileError("仅支持 .txt、.md、.pdf、.docx 文件格式");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setText(event.target?.result as string);
-    };
-    reader.readAsText(file);
+    setIsLoadingFile(true);
+    try {
+      const extracted = await extractTextFromFile(file);
+      setText(extracted);
+    } catch {
+      setFileError("文件解析失败，请检查文件格式");
+    } finally {
+      setIsLoadingFile(false);
+      e.target.value = "";
+    }
   };
 
   const handleSubmit = () => {
@@ -107,24 +155,31 @@ export default function Home() {
                   size="sm" 
                   className="h-8 text-xs text-primary bg-primary/5 hover:bg-primary/10"
                   onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoadingFile}
                 >
                   <Upload className="w-3 h-3 mr-1.5" />
-                  上传 TXT
+                  {isLoadingFile ? "解析中..." : "上传文件"}
                 </Button>
                 <input 
                   type="file" 
                   ref={fileInputRef} 
                   className="hidden" 
-                  accept=".txt,.md,.csv" 
+                  accept=".txt,.md,.pdf,.docx" 
                   onChange={handleFileUpload} 
                 />
               </div>
               <Textarea 
-                placeholder="在此粘贴文档内容..." 
+                placeholder="在此粘贴文档内容，或上传文件（支持 .txt、.pdf、.docx）..." 
                 className="h-64 resize-none bg-slate-50/50 border-slate-200/60 focus:bg-white"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
               />
+              {fileError && (
+                <div className="text-xs text-rose-600 flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  {fileError}
+                </div>
+              )}
             </div>
             
             <div className="border-t border-slate-100 p-5 flex flex-col gap-4 bg-slate-50/30">
@@ -292,20 +347,22 @@ export default function Home() {
   );
 }
 
-function FieldCard({ field }: { field: ExtractedField }) {
-  const confidenceConfig = {
-    high: { color: "success", label: "高置信度" },
-    medium: { color: "warning", label: "中置信度" },
-    low: { color: "error", label: "低置信度" },
-  } as const;
+type BadgeVariant = "default" | "success" | "warning" | "error";
 
-  const conf = confidenceConfig[field.confidence || "medium"];
+const CONFIDENCE_CONFIG: Record<string, { color: BadgeVariant; label: string }> = {
+  high: { color: "success", label: "高置信度" },
+  medium: { color: "warning", label: "中置信度" },
+  low: { color: "error", label: "低置信度" },
+};
+
+function FieldCard({ field }: { field: ExtractedField }) {
+  const conf = CONFIDENCE_CONFIG[field.confidence ?? "medium"] ?? CONFIDENCE_CONFIG["medium"];
 
   return (
     <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm hover:shadow-md hover:border-primary/30 transition-all group">
       <div className="flex justify-between items-start mb-2 gap-2">
         <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{field.key}</span>
-        <Badge variant={conf.color as any} className="scale-90 origin-top-right opacity-80 group-hover:opacity-100 transition-opacity">
+        <Badge variant={conf.color} className="scale-90 origin-top-right opacity-80 group-hover:opacity-100 transition-opacity">
           {conf.label}
         </Badge>
       </div>
