@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { ZodError } from "zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { db } from "@workspace/db";
 import { extractionJobsTable } from "@workspace/db";
@@ -65,8 +66,19 @@ function buildPrompt(template: string, text: string, customFields?: string[]): s
 }
 
 router.post("/extract", async (req, res) => {
+  let body: ReturnType<typeof ExtractDocumentBody.parse>;
   try {
-    const body = ExtractDocumentBody.parse(req.body);
+    body = ExtractDocumentBody.parse(req.body);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", details: err.errors });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
     const { text, template, customFields } = body;
 
     const prompt = buildPrompt(template, text, customFields ?? undefined);
