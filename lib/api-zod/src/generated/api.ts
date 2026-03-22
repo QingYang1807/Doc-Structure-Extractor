@@ -14,3 +14,114 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Analyzes document text and extracts structured fields based on the selected template
+ * @summary Extract structured data from a document
+ */
+export const ExtractDocumentBody = zod.object({
+  text: zod.string().describe("The document text to extract information from"),
+  template: zod
+    .enum(["contract", "invoice", "resume", "general", "custom"])
+    .describe("The extraction template to use"),
+  customFields: zod
+    .array(zod.string())
+    .optional()
+    .describe("Custom field names to extract (used when template is 'custom')"),
+});
+
+export const ExtractDocumentResponse = zod.object({
+  id: zod.number().describe("Job ID"),
+  template: zod.string().describe("Template used"),
+  fields: zod.array(
+    zod.object({
+      key: zod.string().describe("Field name"),
+      value: zod.string().describe("Extracted value"),
+      confidence: zod
+        .enum(["high", "medium", "low"])
+        .describe("Confidence level of extraction"),
+    }),
+  ),
+  rawJson: zod
+    .record(zod.string(), zod.unknown())
+    .describe("Raw extraction result as JSON object"),
+  summary: zod
+    .string()
+    .optional()
+    .describe("AI-generated summary of extracted information"),
+  createdAt: zod.date(),
+});
+
+/**
+ * Returns the most recent extraction jobs
+ * @summary Get extraction history
+ */
+export const getHistoryQueryLimitDefault = 20;
+export const getHistoryQueryLimitMax = 100;
+
+export const GetHistoryQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(getHistoryQueryLimitMax)
+    .default(getHistoryQueryLimitDefault),
+});
+
+export const GetHistoryResponse = zod.object({
+  items: zod.array(
+    zod.object({
+      id: zod.number(),
+      template: zod.string(),
+      textPreview: zod.string().describe("First 200 chars of the document"),
+      fields: zod.array(
+        zod.object({
+          key: zod.string().describe("Field name"),
+          value: zod.string().describe("Extracted value"),
+          confidence: zod
+            .enum(["high", "medium", "low"])
+            .describe("Confidence level of extraction"),
+        }),
+      ),
+      rawJson: zod.record(zod.string(), zod.unknown()),
+      summary: zod.string().optional(),
+      createdAt: zod.date(),
+    }),
+  ),
+  total: zod.number(),
+});
+
+/**
+ * @summary Get a single extraction job
+ */
+export const GetHistoryItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetHistoryItemResponse = zod.object({
+  id: zod.number(),
+  template: zod.string(),
+  textPreview: zod.string().describe("First 200 chars of the document"),
+  fields: zod.array(
+    zod.object({
+      key: zod.string().describe("Field name"),
+      value: zod.string().describe("Extracted value"),
+      confidence: zod
+        .enum(["high", "medium", "low"])
+        .describe("Confidence level of extraction"),
+    }),
+  ),
+  rawJson: zod.record(zod.string(), zod.unknown()),
+  summary: zod.string().optional(),
+  createdAt: zod.date(),
+});
+
+/**
+ * @summary Delete an extraction job
+ */
+export const DeleteHistoryItemParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DeleteHistoryItemResponse = zod.object({
+  success: zod.boolean(),
+});

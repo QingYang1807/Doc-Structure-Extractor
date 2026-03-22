@@ -8,3 +8,100 @@
 export interface HealthStatus {
   status: string;
 }
+
+/**
+ * The extraction template to use
+ */
+export type ExtractRequestTemplate =
+  (typeof ExtractRequestTemplate)[keyof typeof ExtractRequestTemplate];
+
+export const ExtractRequestTemplate = {
+  contract: "contract",
+  invoice: "invoice",
+  resume: "resume",
+  general: "general",
+  custom: "custom",
+} as const;
+
+export interface ExtractRequest {
+  /** The document text to extract information from */
+  text: string;
+  /** The extraction template to use */
+  template: ExtractRequestTemplate;
+  /** Custom field names to extract (used when template is 'custom') */
+  customFields?: string[];
+}
+
+/**
+ * Confidence level of extraction
+ */
+export type ExtractedFieldConfidence =
+  (typeof ExtractedFieldConfidence)[keyof typeof ExtractedFieldConfidence];
+
+export const ExtractedFieldConfidence = {
+  high: "high",
+  medium: "medium",
+  low: "low",
+} as const;
+
+export interface ExtractedField {
+  /** Field name */
+  key: string;
+  /** Extracted value */
+  value: string;
+  /** Confidence level of extraction */
+  confidence: ExtractedFieldConfidence;
+}
+
+/**
+ * Raw extraction result as JSON object
+ */
+export type ExtractResponseRawJson = { [key: string]: unknown };
+
+export interface ExtractResponse {
+  /** Job ID */
+  id: number;
+  /** Template used */
+  template: string;
+  fields: ExtractedField[];
+  /** Raw extraction result as JSON object */
+  rawJson: ExtractResponseRawJson;
+  /** AI-generated summary of extracted information */
+  summary?: string;
+  createdAt: string;
+}
+
+export type ExtractionJobRawJson = { [key: string]: unknown };
+
+export interface ExtractionJob {
+  id: number;
+  template: string;
+  /** First 200 chars of the document */
+  textPreview: string;
+  fields: ExtractedField[];
+  rawJson: ExtractionJobRawJson;
+  summary?: string;
+  createdAt: string;
+}
+
+export interface HistoryResponse {
+  items: ExtractionJob[];
+  total: number;
+}
+
+export interface ErrorResponse {
+  error: string;
+  message: string;
+}
+
+export interface SuccessResponse {
+  success: boolean;
+}
+
+export type GetHistoryParams = {
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};

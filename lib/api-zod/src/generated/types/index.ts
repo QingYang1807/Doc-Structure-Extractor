@@ -6,4 +6,16 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./errorResponse";
+export * from "./extractedField";
+export * from "./extractedFieldConfidence";
+export * from "./extractionJob";
+export * from "./extractionJobRawJson";
+export * from "./extractRequest";
+export * from "./extractRequestTemplate";
+export * from "./extractResponse";
+export * from "./extractResponseRawJson";
+export * from "./getHistoryParams";
 export * from "./healthStatus";
+export * from "./historyResponse";
+export * from "./successResponse";

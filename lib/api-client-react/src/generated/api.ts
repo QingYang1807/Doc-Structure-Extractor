@@ -5,18 +5,30 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  ErrorResponse,
+  ExtractRequest,
+  ExtractResponse,
+  ExtractionJob,
+  GetHistoryParams,
+  HealthStatus,
+  HistoryResponse,
+  SuccessResponse,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +111,356 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Analyzes document text and extracts structured fields based on the selected template
+ * @summary Extract structured data from a document
+ */
+export const getExtractDocumentUrl = () => {
+  return `/api/extract`;
+};
+
+export const extractDocument = async (
+  extractRequest: ExtractRequest,
+  options?: RequestInit,
+): Promise<ExtractResponse> => {
+  return customFetch<ExtractResponse>(getExtractDocumentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(extractRequest),
+  });
+};
+
+export const getExtractDocumentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractDocument>>,
+    TError,
+    { data: BodyType<ExtractRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof extractDocument>>,
+  TError,
+  { data: BodyType<ExtractRequest> },
+  TContext
+> => {
+  const mutationKey = ["extractDocument"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof extractDocument>>,
+    { data: BodyType<ExtractRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return extractDocument(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExtractDocumentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof extractDocument>>
+>;
+export type ExtractDocumentMutationBody = BodyType<ExtractRequest>;
+export type ExtractDocumentMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Extract structured data from a document
+ */
+export const useExtractDocument = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof extractDocument>>,
+    TError,
+    { data: BodyType<ExtractRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof extractDocument>>,
+  TError,
+  { data: BodyType<ExtractRequest> },
+  TContext
+> => {
+  return useMutation(getExtractDocumentMutationOptions(options));
+};
+
+/**
+ * Returns the most recent extraction jobs
+ * @summary Get extraction history
+ */
+export const getGetHistoryUrl = (params?: GetHistoryParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/history?${stringifiedParams}`
+    : `/api/history`;
+};
+
+export const getHistory = async (
+  params?: GetHistoryParams,
+  options?: RequestInit,
+): Promise<HistoryResponse> => {
+  return customFetch<HistoryResponse>(getGetHistoryUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetHistoryQueryKey = (params?: GetHistoryParams) => {
+  return [`/api/history`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetHistoryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHistory>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetHistoryQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getHistory>>> = ({
+    signal,
+  }) => getHistory(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHistory>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetHistoryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHistory>>
+>;
+export type GetHistoryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get extraction history
+ */
+
+export function useGetHistory<
+  TData = Awaited<ReturnType<typeof getHistory>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetHistoryQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a single extraction job
+ */
+export const getGetHistoryItemUrl = (id: number) => {
+  return `/api/history/${id}`;
+};
+
+export const getHistoryItem = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ExtractionJob> => {
+  return customFetch<ExtractionJob>(getGetHistoryItemUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetHistoryItemQueryKey = (id: number) => {
+  return [`/api/history/${id}`] as const;
+};
+
+export const getGetHistoryItemQueryOptions = <
+  TData = Awaited<ReturnType<typeof getHistoryItem>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHistoryItem>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetHistoryItemQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getHistoryItem>>> = ({
+    signal,
+  }) => getHistoryItem(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getHistoryItem>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetHistoryItemQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getHistoryItem>>
+>;
+export type GetHistoryItemQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get a single extraction job
+ */
+
+export function useGetHistoryItem<
+  TData = Awaited<ReturnType<typeof getHistoryItem>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getHistoryItem>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetHistoryItemQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Delete an extraction job
+ */
+export const getDeleteHistoryItemUrl = (id: number) => {
+  return `/api/history/${id}`;
+};
+
+export const deleteHistoryItem = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SuccessResponse> => {
+  return customFetch<SuccessResponse>(getDeleteHistoryItemUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteHistoryItemMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteHistoryItem>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteHistoryItem>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteHistoryItem"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteHistoryItem>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteHistoryItem(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteHistoryItemMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteHistoryItem>>
+>;
+
+export type DeleteHistoryItemMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Delete an extraction job
+ */
+export const useDeleteHistoryItem = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteHistoryItem>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteHistoryItem>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteHistoryItemMutationOptions(options));
+};

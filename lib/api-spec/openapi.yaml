@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: extraction
+    description: Document structured extraction operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,106 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /extract:
+    post:
+      operationId: extractDocument
+      tags: [extraction]
+      summary: Extract structured data from a document
+      description: Analyzes document text and extracts structured fields based on the selected template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExtractRequest"
+      responses:
+        "200":
+          description: Extraction successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /history:
+    get:
+      operationId: getHistory
+      tags: [extraction]
+      summary: Get extraction history
+      description: Returns the most recent extraction jobs
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: History retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryResponse"
+  /history/{id}:
+    get:
+      operationId: getHistoryItem
+      tags: [extraction]
+      summary: Get a single extraction job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Item retrieved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractionJob"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteHistoryItem
+      tags: [extraction]
+      summary: Delete an extraction job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +135,133 @@ components:
           type: string
       required:
         - status
-
+    ExtractRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: The document text to extract information from
+        template:
+          type: string
+          enum:
+            - contract
+            - invoice
+            - resume
+            - general
+            - custom
+          description: The extraction template to use
+        customFields:
+          type: array
+          items:
+            type: string
+          description: Custom field names to extract (used when template is 'custom')
+      required:
+        - text
+        - template
+    ExtractedField:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Field name
+        value:
+          type: string
+          description: Extracted value
+        confidence:
+          type: string
+          enum:
+            - high
+            - medium
+            - low
+          description: Confidence level of extraction
+      required:
+        - key
+        - value
+        - confidence
+    ExtractResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Job ID
+        template:
+          type: string
+          description: Template used
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtractedField"
+        rawJson:
+          type: object
+          description: Raw extraction result as JSON object
+          additionalProperties: true
+        summary:
+          type: string
+          description: AI-generated summary of extracted information
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - template
+        - fields
+        - rawJson
+        - createdAt
+    ExtractionJob:
+      type: object
+      properties:
+        id:
+          type: integer
+        template:
+          type: string
+        textPreview:
+          type: string
+          description: First 200 chars of the document
+        fields:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtractedField"
+        rawJson:
+          type: object
+          additionalProperties: true
+        summary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - template
+        - textPreview
+        - fields
+        - rawJson
+        - createdAt
+    HistoryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExtractionJob"
+        total:
+          type: integer
+      required:
+        - items
+        - total
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required:
+        - success

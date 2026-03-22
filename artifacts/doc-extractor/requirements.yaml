@@ -1,0 +1,20 @@
+packages:
+  "framer-motion": "For fluid layout transitions and animations"
+  "papaparse": "For parsing and generating CSV files for export"
+  "@types/papaparse": "Types for papaparse"
+  "date-fns": "For formatting history dates nicely"
+  "clsx": "For conditional class names"
+  "tailwind-merge": "For merging tailwind classes safely"
+  "lucide-react": "For beautiful consistent icons"
+
+images:
+  - path: "artifacts/doc-extractor/public/images/hero-bg.png"
+    description: "Abstract minimal clean background with soft light blue and slate gradients, very professional and subtle, suitable for a corporate document processing tool"
+    aspect_ratio: "16:9"
+  - path: "artifacts/doc-extractor/public/images/empty-state.png"
+    description: "A beautiful minimal 3D illustration of a document floating with abstract geometric shapes representing data extraction, clean light blue and white aesthetic"
+    aspect_ratio: "1:1"
+
+notes:
+  - Expects API at /api/extract, /api/history
+  - React Query hooks are imported from @workspace/api-client-react
