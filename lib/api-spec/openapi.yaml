@@ -140,7 +140,12 @@ components:
       properties:
         text:
           type: string
-          description: The document text to extract information from
+          description: The document text to extract information from (provide either text or imageData)
+        imageData:
+          type: array
+          items:
+            type: string
+          description: Base64-encoded image data URIs for image/scanned-PDF extraction (provide either text or imageData)
         template:
           type: string
           enum:
@@ -156,7 +161,6 @@ components:
             type: string
           description: Custom field names to extract (used when template is 'custom')
       required:
-        - text
         - template
     ExtractedField:
       type: object

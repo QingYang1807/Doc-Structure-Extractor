@@ -24,8 +24,10 @@ export const ExtractRequestTemplate = {
 } as const;
 
 export interface ExtractRequest {
-  /** The document text to extract information from */
-  text: string;
+  /** The document text to extract information from (provide either text or imageData) */
+  text?: string;
+  /** Base64-encoded image data URIs for image/scanned-PDF extraction (provide either text or imageData) */
+  imageData?: string[];
   /** The extraction template to use */
   template: ExtractRequestTemplate;
   /** Custom field names to extract (used when template is 'custom') */

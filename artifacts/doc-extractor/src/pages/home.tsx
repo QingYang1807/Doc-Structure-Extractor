@@ -4,15 +4,17 @@ import { useExtractDocument } from "@workspace/api-client-react";
 import type { ExtractRequestTemplate, ExtractedField } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { Button, Card, Textarea, Input, Badge } from "@/components/ui-elements";
-import { 
-  FileText, Upload, Sparkles, AlertCircle, FileJson, 
-  Table as TableIcon, Download, CheckCircle2
+import {
+  FileText, Upload, Sparkles, AlertCircle, FileJson,
+  Table as TableIcon, Download, CheckCircle2, Image as ImageIcon,
 } from "lucide-react";
 import Papa from "papaparse";
 import { downloadFile } from "@/lib/utils";
 import * as pdfjsLib from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import mammoth from "mammoth";
+import * as XLSX from "xlsx";
+import JSZip from "jszip";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -27,7 +29,57 @@ const TEMPLATES: { id: ExtractRequestTemplate; label: string; description: strin
   { id: "custom", label: "自定义字段", description: "指定需要抽取的具体字段名称" },
 ];
 
-async function extractTextFromFile(file: File): Promise<string> {
+const ACCEPTED_EXTS = ".txt,.md,.pdf,.docx,.doc,.xlsx,.xls,.csv,.pptx,.png,.jpg,.jpeg,.gif,.bmp,.webp";
+const ACCEPTED_LABEL = "TXT、MD、PDF（含扫描件）、Word、Excel、CSV、PPT、PNG/JPG 等图片";
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (const b of bytes) binary += String.fromCharCode(b);
+  return btoa(binary);
+}
+
+async function pdfPageToDataUri(page: pdfjsLib.PDFPageProxy): Promise<string> {
+  const viewport = page.getViewport({ scale: 2.0 });
+  const canvas = document.createElement("canvas");
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext("2d")!;
+  await page.render({ canvasContext: ctx, canvas, viewport }).promise;
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+async function extractFromExcel(buffer: ArrayBuffer): Promise<string> {
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const parts: string[] = [];
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const csv = XLSX.utils.sheet_to_csv(sheet!);
+    if (csv.trim()) parts.push(`【工作表: ${sheetName}】\n${csv}`);
+  }
+  return parts.join("\n\n");
+}
+
+async function extractFromPptx(buffer: ArrayBuffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const slideFiles = Object.keys(zip.files)
+    .filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+    .sort();
+  const texts: string[] = [];
+  for (const slidePath of slideFiles) {
+    const xml = await zip.files[slidePath]!.async("string");
+    const matches = xml.match(/<a:t>([^<]*)<\/a:t>/g) ?? [];
+    const slideText = matches.map((m) => m.replace(/<\/?a:t>/g, "")).join(" ").trim();
+    if (slideText) texts.push(slideText);
+  }
+  return texts.join("\n\n");
+}
+
+export type ExtractionInput =
+  | { kind: "text"; text: string }
+  | { kind: "images"; imageData: string[]; label: string };
+
+async function extractInputFromFile(file: File): Promise<ExtractionInput> {
   const name = file.name.toLowerCase();
 
   if (name.endsWith(".pdf") || file.type === "application/pdf") {
@@ -40,10 +92,23 @@ async function extractTextFromFile(file: File): Promise<string> {
       const pageText = content.items
         .filter((item): item is TextItem => "str" in item && typeof (item as TextItem).str === "string")
         .map((item) => item.str)
-        .join(" ");
+        .join(" ")
+        .trim();
       pages.push(pageText);
     }
-    return pages.join("\n\n");
+    const fullText = pages.join("\n\n");
+    const wordCount = fullText.trim().split(/\s+/).filter(Boolean).length;
+
+    if (wordCount >= 10) {
+      return { kind: "text", text: fullText };
+    }
+
+    const imageData: string[] = [];
+    for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
+      const page = await pdf.getPage(i);
+      imageData.push(await pdfPageToDataUri(page));
+    }
+    return { kind: "images", imageData, label: `${file.name}（扫描版 PDF，共 ${pdf.numPages} 页）` };
   }
 
   if (
@@ -52,14 +117,49 @@ async function extractTextFromFile(file: File): Promise<string> {
   ) {
     const arrayBuffer = await file.arrayBuffer();
     const result = await mammoth.extractRawText({ arrayBuffer });
-    return result.value;
+    return { kind: "text", text: result.value };
   }
 
-  return await file.text();
+  if (name.endsWith(".doc") || file.type === "application/msword") {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    return { kind: "text", text: result.value };
+  }
+
+  if (name.endsWith(".xlsx") || name.endsWith(".xls") ||
+      file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
+      file.type === "application/vnd.ms-excel") {
+    const arrayBuffer = await file.arrayBuffer();
+    return { kind: "text", text: await extractFromExcel(arrayBuffer) };
+  }
+
+  if (name.endsWith(".csv") || file.type === "text/csv") {
+    return { kind: "text", text: await file.text() };
+  }
+
+  if (name.endsWith(".pptx") ||
+      file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+    const arrayBuffer = await file.arrayBuffer();
+    return { kind: "text", text: await extractFromPptx(arrayBuffer) };
+  }
+
+  if (
+    name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") ||
+    name.endsWith(".gif") || name.endsWith(".bmp") || name.endsWith(".webp") ||
+    file.type.startsWith("image/")
+  ) {
+    const arrayBuffer = await file.arrayBuffer();
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const mimeType = file.type || "image/png";
+    return { kind: "images", imageData: [`data:${mimeType};base64,${base64}`], label: file.name };
+  }
+
+  return { kind: "text", text: await file.text() };
 }
 
 export default function Home() {
   const [text, setText] = useState("");
+  const [imageInput, setImageInput] = useState<{ imageData: string[]; label: string } | null>(null);
   const [template, setTemplate] = useState<ExtractRequestTemplate>("general");
   const [customFieldsStr, setCustomFieldsStr] = useState("");
   const [activeTab, setActiveTab] = useState<"visual" | "json">("visual");
@@ -72,21 +172,21 @@ export default function Home() {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    
+
     setFileError(null);
-    const name = file.name.toLowerCase();
-    const supported = name.endsWith(".txt") || name.endsWith(".md") || name.endsWith(".pdf") || name.endsWith(".docx");
-    if (!supported) {
-      setFileError("仅支持 .txt、.md、.pdf、.docx 文件格式");
-      return;
-    }
+    setImageInput(null);
+    setText("");
 
     setIsLoadingFile(true);
     try {
-      const extracted = await extractTextFromFile(file);
-      setText(extracted);
+      const input = await extractInputFromFile(file);
+      if (input.kind === "text") {
+        setText(input.text);
+      } else {
+        setImageInput({ imageData: input.imageData, label: input.label });
+      }
     } catch {
-      setFileError("文件解析失败，请检查文件格式");
+      setFileError("文件解析失败，请检查文件格式是否正确");
     } finally {
       setIsLoadingFile(false);
       e.target.value = "";
@@ -94,18 +194,22 @@ export default function Home() {
   };
 
   const handleSubmit = () => {
-    if (!text.trim()) return;
-    
-    const customFields = template === "custom" 
-      ? customFieldsStr.split(",").map(s => s.trim()).filter(Boolean)
-      : undefined;
+    const hasText = text.trim().length > 0;
+    const hasImages = imageInput && imageInput.imageData.length > 0;
+    if (!hasText && !hasImages) return;
+
+    const customFields =
+      template === "custom"
+        ? customFieldsStr.split(",").map((s) => s.trim()).filter(Boolean)
+        : undefined;
 
     extractMutation.mutate({
       data: {
-        text,
+        ...(hasText ? { text } : {}),
+        ...(hasImages ? { imageData: imageInput!.imageData } : {}),
         template,
-        ...(customFields && customFields.length > 0 ? { customFields } : {})
-      }
+        ...(customFields && customFields.length > 0 ? { customFields } : {}),
+      },
     });
   };
 
@@ -120,24 +224,27 @@ export default function Home() {
 
   const handleExportCSV = () => {
     if (!extractMutation.data) return;
-    const csv = Papa.unparse(extractMutation.data.fields.map(f => ({
-      "字段名": f.key,
-      "提取值": f.value,
-      "置信度": f.confidence
-    })));
+    const csv = Papa.unparse(
+      extractMutation.data.fields.map((f) => ({
+        字段名: f.key,
+        提取值: f.value,
+        置信度: f.confidence,
+      }))
+    );
     downloadFile(csv, `extraction-${extractMutation.data.id}.csv`, "text/csv;charset=utf-8;");
   };
 
+  const canSubmit = text.trim().length > 0 || (imageInput != null && imageInput.imageData.length > 0);
   const result = extractMutation.data;
 
   return (
     <Layout>
       <div className="flex flex-col lg:flex-row gap-6">
-        
+
         {/* Left Column: Input Form */}
-        <motion.div 
+        <motion.div
           layout
-          className={`flex flex-col gap-6 transition-all duration-500 ease-in-out ${result ? 'lg:w-1/3' : 'lg:w-full max-w-3xl mx-auto'}`}
+          className={`flex flex-col gap-6 transition-all duration-500 ease-in-out ${result ? "lg:w-1/3" : "lg:w-full max-w-3xl mx-auto"}`}
         >
           <div className="text-center lg:text-left mb-2">
             <h1 className="text-3xl font-display font-bold text-slate-900">智能文档抽取</h1>
@@ -151,9 +258,9 @@ export default function Home() {
                   <FileText className="w-4 h-4 text-primary" />
                   文档内容
                 </label>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="h-8 text-xs text-primary bg-primary/5 hover:bg-primary/10"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={isLoadingFile}
@@ -161,28 +268,50 @@ export default function Home() {
                   <Upload className="w-3 h-3 mr-1.5" />
                   {isLoadingFile ? "解析中..." : "上传文件"}
                 </Button>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  className="hidden" 
-                  accept=".txt,.md,.pdf,.docx" 
-                  onChange={handleFileUpload} 
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  className="hidden"
+                  accept={ACCEPTED_EXTS}
+                  onChange={handleFileUpload}
                 />
               </div>
-              <Textarea 
-                placeholder="在此粘贴文档内容，或上传文件（支持 .txt、.pdf、.docx）..." 
-                className="h-64 resize-none bg-slate-50/50 border-slate-200/60 focus:bg-white"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-              />
+
+              {imageInput ? (
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-indigo-50 border border-indigo-200/60">
+                  <ImageIcon className="w-5 h-5 text-indigo-500 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-indigo-900 truncate">{imageInput.label}</p>
+                    <p className="text-xs text-indigo-600 mt-0.5">图片/扫描件将通过视觉 AI 进行识别</p>
+                  </div>
+                  <button
+                    className="text-xs text-slate-400 hover:text-slate-600 shrink-0"
+                    onClick={() => setImageInput(null)}
+                  >
+                    清除
+                  </button>
+                </div>
+              ) : (
+                <Textarea
+                  placeholder={`在此粘贴文档内容，或上传文件（支持 ${ACCEPTED_LABEL}）...`}
+                  className="h-64 resize-none bg-slate-50/50 border-slate-200/60 focus:bg-white"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                />
+              )}
+
               {fileError && (
                 <div className="text-xs text-rose-600 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" />
                   {fileError}
                 </div>
               )}
+
+              <p className="text-xs text-slate-400">
+                支持格式：TXT、MD、PDF（含扫描件）、Word（.docx/.doc）、Excel（.xlsx/.xls）、CSV、PPT（.pptx）、图片（PNG/JPG/GIF/BMP/WEBP）
+              </p>
             </div>
-            
+
             <div className="border-t border-slate-100 p-5 flex flex-col gap-4 bg-slate-50/30">
               <label className="font-semibold text-slate-900">选择抽取模板</label>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -192,9 +321,9 @@ export default function Home() {
                     onClick={() => setTemplate(tpl.id)}
                     className={`
                       text-left p-3 rounded-xl border-2 transition-all duration-200
-                      ${template === tpl.id 
-                        ? 'border-primary bg-primary/5 shadow-sm' 
-                        : 'border-transparent bg-white shadow-sm hover:border-slate-200'}
+                      ${template === tpl.id
+                        ? "border-primary bg-primary/5 shadow-sm"
+                        : "border-transparent bg-white shadow-sm hover:border-slate-200"}
                     `}
                   >
                     <div className="font-medium text-sm text-slate-900">{tpl.label}</div>
@@ -212,9 +341,11 @@ export default function Home() {
                     className="overflow-hidden"
                   >
                     <div className="pt-2 pb-1">
-                      <label className="text-xs font-medium text-slate-700 mb-1.5 block">自定义字段 (用逗号分隔)</label>
-                      <Input 
-                        placeholder="例如：项目名称, 负责人, 截止日期" 
+                      <label className="text-xs font-medium text-slate-700 mb-1.5 block">
+                        自定义字段 (用逗号分隔)
+                      </label>
+                      <Input
+                        placeholder="例如：项目名称, 负责人, 截止日期"
                         value={customFieldsStr}
                         onChange={(e) => setCustomFieldsStr(e.target.value)}
                         className="bg-white"
@@ -226,11 +357,11 @@ export default function Home() {
             </div>
 
             <div className="p-5 border-t border-slate-100">
-              <Button 
-                className="w-full" 
+              <Button
+                className="w-full"
                 size="lg"
                 onClick={handleSubmit}
-                disabled={!text.trim()}
+                disabled={!canSubmit}
                 isLoading={extractMutation.isPending}
               >
                 <Sparkles className="w-5 h-5 mr-2" />
@@ -249,7 +380,7 @@ export default function Home() {
         {/* Right Column: Results Panel */}
         <AnimatePresence mode="wait">
           {result ? (
-            <motion.div 
+            <motion.div
               key="results"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -323,7 +454,7 @@ export default function Home() {
               </Card>
             </motion.div>
           ) : (
-            <motion.div 
+            <motion.div
               key="empty"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -331,13 +462,15 @@ export default function Home() {
               className="hidden lg:flex flex-1 items-center justify-center"
             >
               <div className="max-w-md text-center">
-                <img 
-                  src={`${import.meta.env.BASE_URL}images/empty-state.png`} 
-                  alt="Awaiting document" 
+                <img
+                  src={`${import.meta.env.BASE_URL}images/empty-state.png`}
+                  alt="Awaiting document"
                   className="w-64 h-64 mx-auto mb-6 opacity-80 mix-blend-multiply"
                 />
                 <h3 className="text-xl font-display font-bold text-slate-800 mb-2">等待文档输入</h3>
-                <p className="text-slate-500">在左侧输入需要解析的文档文本并点击抽取，AI 将自动理解上下文并提取您需要的关键信息。</p>
+                <p className="text-slate-500">
+                  在左侧输入需要解析的文档文本并点击抽取，AI 将自动理解上下文并提取您需要的关键信息。
+                </p>
               </div>
             </motion.div>
           )}
@@ -357,7 +490,7 @@ const CONFIDENCE_CONFIG: Record<string, { color: BadgeVariant; label: string }> 
 };
 
 function FieldCard({ field }: { field: ExtractedField }) {
-  const conf = CONFIDENCE_CONFIG[field.confidence ?? "medium"] ?? CONFIDENCE_CONFIG["medium"];
+  const conf = CONFIDENCE_CONFIG[field.confidence ?? "medium"] ?? CONFIDENCE_CONFIG["medium"]!;
 
   return (
     <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm hover:shadow-md hover:border-primary/30 transition-all group">

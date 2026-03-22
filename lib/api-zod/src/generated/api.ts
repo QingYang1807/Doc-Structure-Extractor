@@ -20,7 +20,14 @@ export const HealthCheckResponse = zod.object({
  * @summary Extract structured data from a document
  */
 export const ExtractDocumentBody = zod.object({
-  text: zod.string().describe("The document text to extract information from"),
+  text: zod
+    .string()
+    .optional()
+    .describe("The document text to extract information from (provide either text or imageData)"),
+  imageData: zod
+    .array(zod.string())
+    .optional()
+    .describe("Base64-encoded image data URIs for image/scanned-PDF extraction (provide either text or imageData)"),
   template: zod
     .enum(["contract", "invoice", "resume", "general", "custom"])
     .describe("The extraction template to use"),
@@ -28,6 +35,8 @@ export const ExtractDocumentBody = zod.object({
     .array(zod.string())
     .optional()
     .describe("Custom field names to extract (used when template is 'custom')"),
+}).refine((d) => (d.text != null && d.text.trim().length > 0) || (d.imageData != null && d.imageData.length > 0), {
+  message: "Either text or imageData must be provided",
 });
 
 export const ExtractDocumentResponse = zod.object({

@@ -57,7 +57,7 @@ const TEMPLATE_PROMPTS: Record<string, string> = {
 - 重要条款或约定`,
 };
 
-function buildPrompt(template: string, text: string, customFields?: string[]): string {
+function buildPrompt(template: string, customFields?: string[]): string {
   if (template === "custom" && customFields && customFields.length > 0) {
     const fieldList = customFields.map((f) => `- ${f}`).join("\n");
     return `请从以下文档中提取以下字段的信息：\n${fieldList}`;
@@ -69,25 +69,7 @@ function zodErrorMessage(err: ZodError): string {
   return err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
 }
 
-router.post("/extract", async (req, res) => {
-  let body: ReturnType<typeof ExtractDocumentBody.parse>;
-  try {
-    body = ExtractDocumentBody.parse(req.body);
-  } catch (err: unknown) {
-    if (err instanceof ZodError) {
-      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
-      return;
-    }
-    res.status(400).json({ error: "invalid_request", message: String(err) });
-    return;
-  }
-
-  try {
-    const { text, template, customFields } = body;
-
-    const prompt = buildPrompt(template, text, customFields ?? undefined);
-
-    const systemMessage = `你是一个专业的文档信息抽取助手。请仔细阅读用户提供的文档，按照要求提取结构化信息。
+const SYSTEM_MESSAGE = `你是一个专业的文档信息抽取助手。请仔细阅读用户提供的文档（文字或图片），按照要求提取结构化信息。
     
 请以JSON格式返回结果，格式如下：
 {
@@ -108,25 +90,67 @@ confidence字段规则：
 
 只返回JSON，不要有其他文字。`;
 
-    const userMessage = `${prompt}\n\n文档内容：\n${text}`;
+async function runExtraction(
+  prompt: string,
+  text?: string,
+  imageData?: string[],
+): Promise<{ fields: Array<{ key: string; value: string; confidence: string }>; summary: string }> {
+  type ContentPart =
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string; detail: "high" } };
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-5.2",
-      max_completion_tokens: 8192,
-      messages: [
-        { role: "system", content: systemMessage },
-        { role: "user", content: userMessage },
-      ],
-    });
+  const userContent: ContentPart[] = [];
 
-    const responseContent = completion.choices[0]?.message?.content ?? "{}";
+  if (text && text.trim()) {
+    userContent.push({ type: "text", text: `${prompt}\n\n文档内容：\n${text}` });
+  }
 
-    let parsed: { fields: Array<{ key: string; value: string; confidence: string }>; summary: string };
-    try {
-      parsed = JSON.parse(responseContent);
-    } catch {
-      parsed = { fields: [], summary: "无法解析响应" };
+  if (imageData && imageData.length > 0) {
+    userContent.push({ type: "text", text: prompt });
+    for (const dataUri of imageData) {
+      userContent.push({ type: "image_url", image_url: { url: dataUri, detail: "high" } });
     }
+  }
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-5.2",
+    max_completion_tokens: 8192,
+    messages: [
+      { role: "system", content: SYSTEM_MESSAGE },
+      { role: "user", content: userContent },
+    ],
+  });
+
+  const responseContent = completion.choices[0]?.message?.content ?? "{}";
+
+  try {
+    return JSON.parse(responseContent) as {
+      fields: Array<{ key: string; value: string; confidence: string }>;
+      summary: string;
+    };
+  } catch {
+    return { fields: [], summary: "无法解析响应" };
+  }
+}
+
+router.post("/extract", async (req, res) => {
+  let body: ReturnType<typeof ExtractDocumentBody.parse>;
+  try {
+    body = ExtractDocumentBody.parse(req.body);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
+    const { text, imageData, template, customFields } = body;
+
+    const prompt = buildPrompt(template, customFields ?? undefined);
+    const parsed = await runExtraction(prompt, text, imageData);
 
     const fields = Array.isArray(parsed.fields) ? parsed.fields : [];
     const summary = parsed.summary ?? "";
@@ -135,14 +159,14 @@ confidence字段规则：
       rawJson[field.key] = field.value;
     }
 
-    const textPreview = text.slice(0, 200);
+    const textPreview = (text ?? (imageData ? `[图片文件，共 ${imageData.length} 张]` : "")).slice(0, 200);
 
     const [job] = await db
       .insert(extractionJobsTable)
       .values({
         template,
         textPreview,
-        rawText: text,
+        rawText: text ?? "",
         fields,
         rawJson,
         summary,
