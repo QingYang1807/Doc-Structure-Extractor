@@ -65,13 +65,17 @@ function buildPrompt(template: string, text: string, customFields?: string[]): s
   return TEMPLATE_PROMPTS[template] ?? TEMPLATE_PROMPTS.general;
 }
 
+function zodErrorMessage(err: ZodError): string {
+  return err.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ");
+}
+
 router.post("/extract", async (req, res) => {
   let body: ReturnType<typeof ExtractDocumentBody.parse>;
   try {
     body = ExtractDocumentBody.parse(req.body);
   } catch (err: unknown) {
     if (err instanceof ZodError) {
-      res.status(400).json({ error: "invalid_request", details: err.errors });
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
       return;
     }
     res.status(400).json({ error: "invalid_request", message: String(err) });
@@ -162,8 +166,20 @@ confidence字段规则：
 });
 
 router.get("/history", async (req, res) => {
+  let params: ReturnType<typeof GetHistoryQueryParams.parse>;
   try {
-    const { limit } = GetHistoryQueryParams.parse(req.query);
+    params = GetHistoryQueryParams.parse(req.query);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
+    const { limit } = params;
     const jobs = await db
       .select()
       .from(extractionJobsTable)
@@ -190,8 +206,20 @@ router.get("/history", async (req, res) => {
 });
 
 router.get("/history/:id", async (req, res) => {
+  let params: ReturnType<typeof GetHistoryItemParams.parse>;
   try {
-    const { id } = GetHistoryItemParams.parse(req.params);
+    params = GetHistoryItemParams.parse(req.params);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
+    const { id } = params;
     const [job] = await db
       .select()
       .from(extractionJobsTable)
@@ -218,8 +246,20 @@ router.get("/history/:id", async (req, res) => {
 });
 
 router.delete("/history/:id", async (req, res) => {
+  let params: ReturnType<typeof DeleteHistoryItemParams.parse>;
   try {
-    const { id } = DeleteHistoryItemParams.parse(req.params);
+    params = DeleteHistoryItemParams.parse(req.params);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
+    const { id } = params;
     const deleted = await db
       .delete(extractionJobsTable)
       .where(eq(extractionJobsTable.id, id))
