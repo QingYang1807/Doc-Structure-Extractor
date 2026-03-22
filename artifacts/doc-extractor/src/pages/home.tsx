@@ -11,6 +11,7 @@ import {
 import Papa from "papaparse";
 import { downloadFile } from "@/lib/utils";
 import * as pdfjsLib from "pdfjs-dist";
+import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import mammoth from "mammoth";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -37,7 +38,7 @@ async function extractTextFromFile(file: File): Promise<string> {
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
       const pageText = content.items
-        .filter((item): item is pdfjsLib.TextItem => "str" in item)
+        .filter((item): item is TextItem => "str" in item && typeof (item as TextItem).str === "string")
         .map((item) => item.str)
         .join(" ");
       pages.push(pageText);
