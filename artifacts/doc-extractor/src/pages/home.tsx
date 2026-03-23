@@ -80,15 +80,22 @@ async function extractFromPptx(buffer: ArrayBuffer): Promise<string> {
 
 export type ExtractionInput =
   | { kind: "text"; text: string }
-  | { kind: "images"; imageData: string[]; label: string };
+  | { kind: "images"; imageData: string[]; label: string; truncatedAt?: number; totalPages?: number };
 
 async function pdfToImages(pdf: pdfjsLib.PDFDocumentProxy, maxPages: number, filename: string): Promise<ExtractionInput> {
   const imageData: string[] = [];
-  for (let i = 1; i <= Math.min(pdf.numPages, maxPages); i++) {
+  const pageCount = Math.min(pdf.numPages, maxPages);
+  for (let i = 1; i <= pageCount; i++) {
     const page = await pdf.getPage(i);
     imageData.push(await pdfPageToDataUri(page));
   }
-  return { kind: "images", imageData, label: `${filename}（共 ${pdf.numPages} 页）` };
+  const truncated = pdf.numPages > maxPages;
+  return {
+    kind: "images",
+    imageData,
+    label: `${filename}（${truncated ? `前 ${maxPages} 页 / 共 ${pdf.numPages} 页` : `共 ${pdf.numPages} 页`}）`,
+    ...(truncated ? { truncatedAt: maxPages, totalPages: pdf.numPages } : {}),
+  };
 }
 
 async function extractInputFromFile(file: File, forMarkdown = false): Promise<ExtractionInput> {
@@ -174,7 +181,7 @@ type AppMode = "extract" | "markdown";
 export default function Home() {
   const [mode, setMode] = useState<AppMode>("extract");
   const [text, setText] = useState("");
-  const [imageInput, setImageInput] = useState<{ imageData: string[]; label: string } | null>(null);
+  const [imageInput, setImageInput] = useState<{ imageData: string[]; label: string; truncatedAt?: number; totalPages?: number } | null>(null);
   const [template, setTemplate] = useState<ExtractRequestTemplate>("general");
   const [customFieldsStr, setCustomFieldsStr] = useState("");
   const [activeTab, setActiveTab] = useState<"visual" | "json">("visual");
@@ -207,7 +214,12 @@ export default function Home() {
       if (input.kind === "text") {
         setText(input.text);
       } else {
-        setImageInput({ imageData: input.imageData, label: input.label });
+        setImageInput({
+          imageData: input.imageData,
+          label: input.label,
+          truncatedAt: input.truncatedAt,
+          totalPages: input.totalPages,
+        });
       }
     } catch {
       setFileError("文件解析失败，请检查文件格式是否正确");
@@ -355,18 +367,28 @@ export default function Home() {
               </div>
 
               {imageInput ? (
-                <div className="flex items-center gap-3 p-3 rounded-xl bg-indigo-50 border border-indigo-200/60">
-                  <ImageIcon className="w-5 h-5 text-indigo-500 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-indigo-900 truncate">{imageInput.label}</p>
-                    <p className="text-xs text-indigo-600 mt-0.5">图片/扫描件将通过视觉 AI 进行识别</p>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-indigo-50 border border-indigo-200/60">
+                    <ImageIcon className="w-5 h-5 text-indigo-500 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-indigo-900 truncate">{imageInput.label}</p>
+                      <p className="text-xs text-indigo-600 mt-0.5">图片/扫描件将通过视觉 AI 进行识别</p>
+                    </div>
+                    <button
+                      className="text-xs text-slate-400 hover:text-slate-600 shrink-0"
+                      onClick={() => setImageInput(null)}
+                    >
+                      清除
+                    </button>
                   </div>
-                  <button
-                    className="text-xs text-slate-400 hover:text-slate-600 shrink-0"
-                    onClick={() => setImageInput(null)}
-                  >
-                    清除
-                  </button>
+                  {imageInput.truncatedAt != null && imageInput.totalPages != null && (
+                    <div className="flex items-start gap-1.5 px-1 text-xs text-amber-700 bg-amber-50 border border-amber-200/60 rounded-lg p-2">
+                      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
+                      <span>
+                        此 PDF 共 {imageInput.totalPages} 页，Markdown 转换仅处理前 {imageInput.truncatedAt} 页（超出部分将被忽略）。
+                      </span>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <Textarea
