@@ -278,6 +278,52 @@ export const SegmentDocumentResponse = zod.object({
 });
 
 /**
+ * Segments a document into clause-level cards, each with a title, full text, semantic category, and supplementary tags.
+ * @summary Split document into labeled clause cards
+ */
+export const ClauseSplitBody = zod.union([zod.unknown(), zod.unknown()]).and(
+  zod.object({
+    text: zod
+      .string()
+      .optional()
+      .describe(
+        "The document text to segment (provide either text or imageData)",
+      ),
+    imageData: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Base64-encoded image data URIs for image\/scanned-PDF segmentation",
+      ),
+  }),
+);
+
+export const ClauseSplitResponse = zod.object({
+  clauses: zod
+    .array(
+      zod.object({
+        id: zod
+          .string()
+          .describe('Unique clause identifier (e.g. \"clause-1\")'),
+        title: zod
+          .string()
+          .describe('Short title for the clause (e.g. \"付款条款\")'),
+        text: zod.string().describe("Full verbatim text of the clause"),
+        category: zod
+          .string()
+          .describe(
+            'Semantic category (e.g. \"付款条款\", \"违约责任\", \"保密义务\", \"争议解决\", \"其他\")',
+          ),
+        tags: zod
+          .array(zod.string())
+          .describe("Supplementary semantic tags for the clause"),
+      }),
+    )
+    .describe("Ordered array of clause cards"),
+  total: zod.number().describe("Total number of clauses found"),
+});
+
+/**
  * Returns the most recent extraction jobs
  * @summary Get extraction history
  */

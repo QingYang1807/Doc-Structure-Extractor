@@ -17,6 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  ClauseSplitRequest,
+  ClauseSplitResponse,
   ErrorResponse,
   ExtractRequest,
   ExtractResponse,
@@ -553,6 +555,93 @@ export const useSegmentDocument = <
   TContext
 > => {
   return useMutation(getSegmentDocumentMutationOptions(options));
+};
+
+/**
+ * Segments a document into clause-level cards, each with a title, full text, semantic category, and supplementary tags.
+ * @summary Split document into labeled clause cards
+ */
+export const getClauseSplitUrl = () => {
+  return `/api/clause-split`;
+};
+
+export const clauseSplit = async (
+  clauseSplitRequest: ClauseSplitRequest,
+  options?: RequestInit,
+): Promise<ClauseSplitResponse> => {
+  return customFetch<ClauseSplitResponse>(getClauseSplitUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(clauseSplitRequest),
+  });
+};
+
+export const getClauseSplitMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clauseSplit>>,
+    TError,
+    { data: BodyType<ClauseSplitRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof clauseSplit>>,
+  TError,
+  { data: BodyType<ClauseSplitRequest> },
+  TContext
+> => {
+  const mutationKey = ["clauseSplit"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof clauseSplit>>,
+    { data: BodyType<ClauseSplitRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return clauseSplit(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ClauseSplitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof clauseSplit>>
+>;
+export type ClauseSplitMutationBody = BodyType<ClauseSplitRequest>;
+export type ClauseSplitMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Split document into labeled clause cards
+ */
+export const useClauseSplit = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof clauseSplit>>,
+    TError,
+    { data: BodyType<ClauseSplitRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof clauseSplit>>,
+  TError,
+  { data: BodyType<ClauseSplitRequest> },
+  TContext
+> => {
+  return useMutation(getClauseSplitMutationOptions(options));
 };
 
 /**

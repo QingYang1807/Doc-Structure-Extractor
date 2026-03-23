@@ -5,7 +5,7 @@ import {
   useMarkdownExtract,
   useDocumentQa,
   useValidateDocument,
-  useSegmentDocument,
+  useClauseSplit,
 } from "@workspace/api-client-react";
 import type {
   ExtractRequestTemplate,
@@ -13,7 +13,7 @@ import type {
   ValidationItem,
   QaEvidenceItem,
   ValidateIssue,
-  ClauseCard,
+  ClauseItem,
 } from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { Button, Card, Textarea, Input, Badge } from "@/components/ui-elements";
@@ -397,7 +397,7 @@ export default function Home() {
   const markdownMutation = useMarkdownExtract();
   const qaMutation = useDocumentQa();
   const validateMutation = useValidateDocument();
-  const segmentMutation = useSegmentDocument();
+  const segmentMutation = useClauseSplit();
 
   const handleModeSwitch = (newMode: AppMode) => {
     setMode(newMode);
@@ -1325,22 +1325,29 @@ function ValidateResultPanel({ result }: { result: { passed: boolean; summary: s
   );
 }
 
-const CLAUSE_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  preamble:     { label: "序言",   color: "text-slate-600",   bg: "bg-slate-100",   border: "border-slate-200" },
-  definitions:  { label: "定义",   color: "text-blue-600",    bg: "bg-blue-50",     border: "border-blue-200" },
-  obligations:  { label: "义务",   color: "text-indigo-600",  bg: "bg-indigo-50",   border: "border-indigo-200" },
-  payment:      { label: "付款",   color: "text-emerald-600", bg: "bg-emerald-50",  border: "border-emerald-200" },
-  deadline:     { label: "期限",   color: "text-orange-600",  bg: "bg-orange-50",   border: "border-orange-200" },
-  liability:    { label: "责任",   color: "text-rose-600",    bg: "bg-rose-50",     border: "border-rose-200" },
-  termination:  { label: "终止",   color: "text-red-600",     bg: "bg-red-50",      border: "border-red-200" },
-  dispute:      { label: "争议",   color: "text-yellow-600",  bg: "bg-yellow-50",   border: "border-yellow-200" },
-  signature:    { label: "签署",   color: "text-purple-600",  bg: "bg-purple-50",   border: "border-purple-200" },
-  misc:         { label: "附则",   color: "text-slate-500",   bg: "bg-slate-50",    border: "border-slate-200" },
-};
+const CLAUSE_CATEGORY_PALETTE = [
+  { color: "text-blue-600",    bg: "bg-blue-50",     border: "border-blue-200" },
+  { color: "text-emerald-600", bg: "bg-emerald-50",  border: "border-emerald-200" },
+  { color: "text-orange-600",  bg: "bg-orange-50",   border: "border-orange-200" },
+  { color: "text-rose-600",    bg: "bg-rose-50",     border: "border-rose-200" },
+  { color: "text-violet-600",  bg: "bg-violet-50",   border: "border-violet-200" },
+  { color: "text-yellow-600",  bg: "bg-yellow-50",   border: "border-yellow-200" },
+  { color: "text-indigo-600",  bg: "bg-indigo-50",   border: "border-indigo-200" },
+  { color: "text-teal-600",    bg: "bg-teal-50",     border: "border-teal-200" },
+  { color: "text-red-600",     bg: "bg-red-50",      border: "border-red-200" },
+  { color: "text-purple-600",  bg: "bg-purple-50",   border: "border-purple-200" },
+  { color: "text-slate-500",   bg: "bg-slate-50",    border: "border-slate-200" },
+];
 
-function ClauseCardItem({ clause }: { clause: ClauseCard }) {
+function getCategoryStyle(category: string, categorySet: string[]) {
+  const idx = categorySet.indexOf(category);
+  return CLAUSE_CATEGORY_PALETTE[idx % CLAUSE_CATEGORY_PALETTE.length] ?? CLAUSE_CATEGORY_PALETTE[CLAUSE_CATEGORY_PALETTE.length - 1]!;
+}
+
+function ClauseCardItem({ clause, categorySet }: { clause: ClauseItem; categorySet: string[] }) {
   const [expanded, setExpanded] = useState(false);
-  const cfg = CLAUSE_TYPE_CONFIG[clause.type] ?? CLAUSE_TYPE_CONFIG["misc"]!;
+  const cfg = getCategoryStyle(clause.category, categorySet);
+  const clauseNum = clause.id.replace("clause-", "");
 
   return (
     <div className={`rounded-xl border ${cfg.border} overflow-hidden`}>
@@ -1349,14 +1356,22 @@ function ClauseCardItem({ clause }: { clause: ClauseCard }) {
         onClick={() => setExpanded((p) => !p)}
       >
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-0.5">
-            <span className="text-xs font-mono text-slate-400">#{String(clause.index).padStart(2, "0")}</span>
-            <span className="font-semibold text-sm text-slate-900">{clause.label}</span>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-xs font-mono text-slate-400">#{clauseNum.padStart(2, "0")}</span>
+            <span className="font-semibold text-sm text-slate-900">{clause.title}</span>
             <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
-              {cfg.label}
+              {clause.category}
             </span>
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed">{clause.summary}</p>
+          {clause.tags.length > 0 && (
+            <div className="flex gap-1.5 flex-wrap">
+              {clause.tags.map((tag) => (
+                <span key={tag} className="text-xs text-slate-500 bg-white/70 px-1.5 py-0.5 rounded border border-slate-200/60">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         {expanded
           ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
@@ -1372,7 +1387,7 @@ function ClauseCardItem({ clause }: { clause: ClauseCard }) {
             className="overflow-hidden"
           >
             <div className="px-4 py-3 border-t border-slate-100 bg-white">
-              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{clause.content}</p>
+              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{clause.text}</p>
             </div>
           </motion.div>
         )}
@@ -1381,14 +1396,16 @@ function ClauseCardItem({ clause }: { clause: ClauseCard }) {
   );
 }
 
-function SegmentResultPanel({ result }: { result: { clauses: ClauseCard[]; totalClauses: number } }) {
+function SegmentResultPanel({ result }: { result: { clauses: ClauseItem[]; total: number } }) {
   const handleDownloadSegmentJSON = () => {
     downloadFile(
-      JSON.stringify({ totalClauses: result.totalClauses, clauses: result.clauses }, null, 2),
+      JSON.stringify({ total: result.total, clauses: result.clauses }, null, 2),
       "clauses.json",
       "application/json"
     );
   };
+
+  const categorySet = Array.from(new Set(result.clauses.map((c) => c.category)));
 
   return (
     <>
@@ -1398,7 +1415,7 @@ function SegmentResultPanel({ result }: { result: { clauses: ClauseCard[]; total
           条款切分结果
         </h2>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-slate-500 font-normal">共 {result.totalClauses} 个条款</span>
+          <span className="text-sm text-slate-500 font-normal">共 {result.total} 个条款</span>
           <Button variant="outline" size="sm" onClick={handleDownloadSegmentJSON}>
             <Download className="w-4 h-4 mr-1.5" /> 下载 JSON
           </Button>
@@ -1411,12 +1428,12 @@ function SegmentResultPanel({ result }: { result: { clauses: ClauseCard[]; total
           <span className="text-sm font-bold text-purple-900">文档已按语义切分为 {result.clauses.length} 个条款卡片</span>
         </div>
         <div className="flex gap-2 flex-wrap mt-2">
-          {Array.from(new Set(result.clauses.map((c) => c.type))).map((type) => {
-            const cfg = CLAUSE_TYPE_CONFIG[type] ?? CLAUSE_TYPE_CONFIG["misc"]!;
-            const count = result.clauses.filter((c) => c.type === type).length;
+          {categorySet.map((cat) => {
+            const cfg = getCategoryStyle(cat, categorySet);
+            const count = result.clauses.filter((c) => c.category === cat).length;
             return (
-              <span key={type} className={`text-xs font-medium px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
-                {cfg.label} × {count}
+              <span key={cat} className={`text-xs font-medium px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+                {cat} × {count}
               </span>
             );
           })}
@@ -1424,8 +1441,8 @@ function SegmentResultPanel({ result }: { result: { clauses: ClauseCard[]; total
       </Card>
 
       <div className="flex flex-col gap-3">
-        {result.clauses.map((clause, idx) => (
-          <ClauseCardItem key={idx} clause={clause} />
+        {result.clauses.map((clause) => (
+          <ClauseCardItem key={clause.id} clause={clause} categorySet={categorySet} />
         ))}
         {result.clauses.length === 0 && (
           <Card className="p-5 border-amber-200/60 bg-amber-50/40">

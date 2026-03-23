@@ -13,6 +13,7 @@ import {
   DocumentQaBody,
   ValidateDocumentBody,
   SegmentDocumentBody,
+  ClauseSplitBody,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -679,6 +680,119 @@ router.post("/segment", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error segmenting document");
     res.status(500).json({ error: "segment_failed", message: String(err) });
+  }
+});
+
+const CLAUSE_SPLIT_SYSTEM_MESSAGE = `你是一个专业的法律文档条款切分助手。你的任务是将用户提供的文档切分为具有语义意义的独立条款卡片。
+
+切分原则：
+1. 按自然段落、编号条款、或语义完整性进行切分，不要切分得过细
+2. text 字段必须包含该条款的完整原文，一字不差
+3. title 应简洁明了，2-8个汉字，准确概括该条款核心内容
+4. category 从以下分类中选择最合适的（必须使用中文）：
+   - 定义条款：对术语、概念进行定义的条款
+   - 授权许可：授予权利或许可的条款
+   - 付款条款：涉及价款、费用、付款方式的条款
+   - 期限条款：涉及合同期限、时间节点的条款
+   - 权利义务：各方责任、权利、义务的条款
+   - 违约责任：违约情形与赔偿的条款
+   - 保密义务：保密、竞业限制的条款
+   - 知识产权：知识产权归属与保护的条款
+   - 争议解决：纠纷处理、仲裁、诉讼的条款
+   - 解除终止：合同解除、终止条件的条款
+   - 附则：生效、修改、补充等一般条款
+   - 其他：不属于以上分类的条款
+5. tags 为1-3个补充标签，进一步描述该条款的特征（如"金额"、"期限"、"违约金"等），可以为空数组
+6. id 格式为 "clause-N"，N 从 1 开始递增
+
+严格按照以下 JSON 格式返回，不要有任何其他文字：
+{
+  "total": 数字,
+  "clauses": [
+    {
+      "id": "clause-1",
+      "title": "条款标题",
+      "text": "条款完整原文",
+      "category": "付款条款",
+      "tags": ["金额", "付款方式"]
+    }
+  ]
+}`;
+
+router.post("/clause-split", async (req, res) => {
+  let body: ReturnType<typeof ClauseSplitBody.parse>;
+  try {
+    body = ClauseSplitBody.parse(req.body);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  if (!requireDocumentContent(body, res)) return;
+
+  try {
+    const { text, imageData } = body;
+
+    type ContentPart =
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string; detail: "high" } };
+
+    const userContent: ContentPart[] = [];
+
+    if (text && text.trim()) {
+      userContent.push({ type: "text", text: `文档内容：\n\n${text}` });
+    }
+
+    if (imageData && imageData.length > 0) {
+      userContent.push({
+        type: "text",
+        text: `以下是文档的 ${imageData.length} 张页面图片，请对文档进行条款切分：`,
+      });
+      for (const dataUri of imageData) {
+        userContent.push({ type: "image_url", image_url: { url: dataUri, detail: "high" } });
+      }
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 16384,
+      messages: [
+        { role: "system", content: CLAUSE_SPLIT_SYSTEM_MESSAGE },
+        { role: "user", content: userContent },
+      ],
+    });
+
+    const responseContent = completion.choices[0]?.message?.content ?? "{}";
+
+    let parsed: {
+      total: number;
+      clauses: Array<{
+        id: string;
+        title: string;
+        text: string;
+        category: string;
+        tags: string[];
+      }>;
+    };
+    try {
+      parsed = JSON.parse(responseContent) as typeof parsed;
+    } catch {
+      parsed = { total: 0, clauses: [] };
+    }
+
+    const clauses = Array.isArray(parsed.clauses) ? parsed.clauses : [];
+
+    res.json({
+      total: parsed.total ?? clauses.length,
+      clauses,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error splitting clauses");
+    res.status(500).json({ error: "clause_split_failed", message: String(err) });
   }
 });
 

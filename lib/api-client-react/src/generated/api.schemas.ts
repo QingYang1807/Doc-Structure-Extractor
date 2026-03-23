@@ -260,6 +260,33 @@ export interface QaResponse {
   evidence: QaEvidenceItem[];
 }
 
+export type ClauseSplitRequest = unknown & {
+  /** The document text to segment (provide either text or imageData) */
+  text?: string;
+  /** Base64-encoded image data URIs for image/scanned-PDF segmentation */
+  imageData?: string[];
+};
+
+export interface ClauseItem {
+  /** Unique clause identifier (e.g. "clause-1") */
+  id: string;
+  /** Short title for the clause (e.g. "付款条款") */
+  title: string;
+  /** Full verbatim text of the clause */
+  text: string;
+  /** Semantic category (e.g. "付款条款", "违约责任", "保密义务", "争议解决", "其他") */
+  category: string;
+  /** Supplementary semantic tags for the clause */
+  tags: string[];
+}
+
+export interface ClauseSplitResponse {
+  /** Ordered array of clause cards */
+  clauses: ClauseItem[];
+  /** Total number of clauses found */
+  total: number;
+}
+
 export type GetHistoryParams = {
   /**
    * @minimum 1

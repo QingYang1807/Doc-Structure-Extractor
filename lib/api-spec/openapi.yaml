@@ -181,6 +181,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /clause-split:
+    post:
+      operationId: clauseSplit
+      tags: [extraction]
+      summary: Split document into labeled clause cards
+      description: Segments a document into clause-level cards, each with a title, full text, semantic category, and supplementary tags.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClauseSplitRequest"
+      responses:
+        "200":
+          description: Segmentation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClauseSplitResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /history:
     get:
       operationId: getHistory
@@ -585,3 +616,57 @@ components:
       required:
         - answer
         - evidence
+    ClauseSplitRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: The document text to segment (provide either text or imageData)
+        imageData:
+          type: array
+          items:
+            type: string
+          description: Base64-encoded image data URIs for image/scanned-PDF segmentation
+      anyOf:
+        - required: [text]
+        - required: [imageData]
+    ClauseItem:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique clause identifier (e.g. "clause-1")
+        title:
+          type: string
+          description: Short title for the clause (e.g. "付款条款")
+        text:
+          type: string
+          description: Full verbatim text of the clause
+        category:
+          type: string
+          description: Semantic category (e.g. "付款条款", "违约责任", "保密义务", "争议解决", "其他")
+        tags:
+          type: array
+          items:
+            type: string
+          description: Supplementary semantic tags for the clause
+      required:
+        - id
+        - title
+        - text
+        - category
+        - tags
+    ClauseSplitResponse:
+      type: object
+      properties:
+        clauses:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClauseItem"
+          description: Ordered array of clause cards
+        total:
+          type: integer
+          description: Total number of clauses found
+      required:
+        - clauses
+        - total
