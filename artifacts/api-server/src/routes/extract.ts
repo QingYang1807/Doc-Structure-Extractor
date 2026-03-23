@@ -110,6 +110,36 @@ confidence字段规则：
 
 只返回JSON，不要有其他文字。`;
 
+const VALIDATION_SYSTEM_MESSAGE = `你是一个专业的文档规则校验助手。你将收到从文档中已抽取的结构化字段列表，请对这些字段进行规则校验，检测常见文档异常。
+
+检测规则（重点检查）：
+1. 日期矛盾：结束日期早于开始日期、签署日期晚于生效日期等
+2. 金额不一致：同一合同中不同位置的金额数字不匹配（如大写与数字不符）
+3. 必填字段缺失：合同缺乙方/甲方、发票缺税率、简历缺联系方式等重要字段值为"未找到"
+4. 逻辑错误：条款之间的明显矛盾，如付款日期早于合同签署日期
+5. 格式错误：日期格式不规范、金额格式异常等
+
+请以JSON格式返回校验结果：
+{
+  "validation": [
+    {
+      "field": "涉及的字段名（如：合同截止日期）",
+      "severity": "high/medium/low",
+      "issue": "对问题的简洁描述（中文，不超过50字）"
+    }
+  ]
+}
+
+severity说明：
+- high：严重问题，可能导致合同无效或重大损失（如日期矛盾、金额严重不符）
+- medium：中等风险，需要关注（如重要字段缺失）
+- low：提示性问题，建议修正（如格式不规范）
+
+重要：
+- 只报告真实存在的问题，不要无中生有
+- 如果所有字段都正常，返回 {"validation": []}
+- 只返回JSON，不要有其他文字`;
+
 async function runExtraction(
   prompt: string,
   text?: string,
@@ -150,6 +180,32 @@ async function runExtraction(
     };
   } catch {
     return { fields: [], summary: "无法解析响应" };
+  }
+}
+
+async function runValidation(
+  fields: Array<{ key: string; value: string; confidence: string }>,
+): Promise<Array<{ field: string; severity: string; issue: string }>> {
+  const fieldText = fields
+    .map((f) => `- ${f.key}：${f.value}（置信度：${f.confidence}）`)
+    .join("\n");
+
+  const completion = await openai.chat.completions.create({
+    model: "gpt-5.2",
+    max_completion_tokens: 2048,
+    messages: [
+      { role: "system", content: VALIDATION_SYSTEM_MESSAGE },
+      { role: "user", content: `已抽取字段如下：\n${fieldText}` },
+    ],
+  });
+
+  const responseContent = completion.choices[0]?.message?.content ?? "{}";
+
+  try {
+    const parsed = JSON.parse(responseContent) as { validation?: Array<{ field: string; severity: string; issue: string }> };
+    return Array.isArray(parsed.validation) ? parsed.validation : [];
+  } catch {
+    return [];
   }
 }
 
@@ -197,12 +253,15 @@ router.post("/extract", async (req, res) => {
       })
       .returning();
 
+    const validation = fields.length > 0 ? await runValidation(fields) : [];
+
     res.json({
       id: job!.id,
       template: job!.template,
       fields: job!.fields,
       rawJson: job!.rawJson,
       summary: job!.summary,
+      validation,
       createdAt: job!.createdAt,
     });
   } catch (err) {

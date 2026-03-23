@@ -60,6 +60,24 @@ export const ExtractDocumentResponse = zod.object({
     .string()
     .optional()
     .describe("AI-generated summary of extracted information"),
+  validation: zod
+    .array(
+      zod.object({
+        field: zod.string().describe("The field name involved in the issue"),
+        severity: zod
+          .enum(["high", "medium", "low"])
+          .describe(
+            "Risk level — high (error), medium (warning), low (notice)",
+          ),
+        issue: zod
+          .string()
+          .describe("Human-readable description of the detected problem"),
+      }),
+    )
+    .optional()
+    .describe(
+      "Post-extraction rule validation results (date conflicts, amount mismatches, missing required fields, etc.)",
+    ),
   createdAt: zod.date(),
 });
 

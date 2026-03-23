@@ -10,6 +10,7 @@ import {
 import type {
   ExtractRequestTemplate,
   ExtractedField,
+  ValidationItem,
   QaEvidenceItem,
   ValidateIssue,
   ClauseCard,
@@ -886,6 +887,11 @@ export default function Home() {
                     </Card>
                   )}
 
+                  {/* Validation Report */}
+                  {extractMutation.data.validation != null && (
+                    <ValidationReport items={extractMutation.data.validation} />
+                  )}
+
                   <Card className="flex-1 flex flex-col min-h-[500px]">
                     <div className="flex border-b border-slate-100 bg-slate-50/50 rounded-t-2xl p-1">
                       <button
@@ -1034,6 +1040,71 @@ const CONFIDENCE_CONFIG: Record<string, { color: BadgeVariant; label: string }> 
   medium: { color: "warning", label: "中置信度" },
   low: { color: "error", label: "低置信度" },
 };
+
+const VALIDATION_SEVERITY_CONFIG = {
+  high: {
+    label: "高风险",
+    bgClass: "bg-rose-50 border-rose-200/70",
+    labelClass: "bg-rose-100 text-rose-700 border border-rose-200",
+    iconClass: "text-rose-500",
+    Icon: XCircle,
+  },
+  medium: {
+    label: "中风险",
+    bgClass: "bg-amber-50 border-amber-200/70",
+    labelClass: "bg-amber-100 text-amber-700 border border-amber-200",
+    iconClass: "text-amber-500",
+    Icon: TriangleAlert,
+  },
+  low: {
+    label: "低风险",
+    bgClass: "bg-blue-50 border-blue-200/70",
+    labelClass: "bg-blue-100 text-blue-700 border border-blue-200",
+    iconClass: "text-blue-500",
+    Icon: Info,
+  },
+} as const;
+
+function ValidationReport({ items }: { items: ValidationItem[] }) {
+  const passed = items.length === 0;
+
+  return (
+    <Card className="p-5 flex flex-col gap-3">
+      <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+        <ShieldCheck className="w-4 h-4 text-slate-600" />
+        校验报告
+        <span className="ml-auto text-xs font-normal text-slate-400">{items.length} 条风险项</span>
+      </h3>
+
+      {passed ? (
+        <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-200/70">
+          <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+          <span className="text-sm text-emerald-800 font-medium">校验通过，未发现异常</span>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {items.map((item, idx) => {
+            const cfg = VALIDATION_SEVERITY_CONFIG[item.severity as keyof typeof VALIDATION_SEVERITY_CONFIG]
+              ?? VALIDATION_SEVERITY_CONFIG.medium;
+            const { Icon } = cfg;
+            return (
+              <div key={idx} className={`flex items-start gap-3 p-3 rounded-xl border ${cfg.bgClass}`}>
+                <Icon className={`w-4 h-4 shrink-0 mt-0.5 ${cfg.iconClass}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-md ${cfg.labelClass}`}>{cfg.label}</span>
+                    <span className="text-xs font-medium text-slate-600 truncate">{item.field}</span>
+                  </div>
+                  <p className="text-sm text-slate-800 leading-relaxed">{item.issue}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function FieldCard({ field }: { field: ExtractedField }) {
   const conf = CONFIDENCE_CONFIG[field.confidence ?? "medium"] ?? CONFIDENCE_CONFIG["medium"]!;

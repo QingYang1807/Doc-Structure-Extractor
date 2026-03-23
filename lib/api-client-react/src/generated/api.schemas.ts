@@ -56,6 +56,27 @@ export interface ExtractedField {
 }
 
 /**
+ * Risk level — high (error), medium (warning), low (notice)
+ */
+export type ValidationItemSeverity =
+  (typeof ValidationItemSeverity)[keyof typeof ValidationItemSeverity];
+
+export const ValidationItemSeverity = {
+  high: "high",
+  medium: "medium",
+  low: "low",
+} as const;
+
+export interface ValidationItem {
+  /** The field name involved in the issue */
+  field: string;
+  /** Risk level — high (error), medium (warning), low (notice) */
+  severity: ValidationItemSeverity;
+  /** Human-readable description of the detected problem */
+  issue: string;
+}
+
+/**
  * Raw extraction result as JSON object
  */
 export type ExtractResponseRawJson = { [key: string]: unknown };
@@ -70,6 +91,8 @@ export interface ExtractResponse {
   rawJson: ExtractResponseRawJson;
   /** AI-generated summary of extracted information */
   summary?: string;
+  /** Post-extraction rule validation results (date conflicts, amount mismatches, missing required fields, etc.) */
+  validation?: ValidationItem[];
   createdAt: string;
 }
 

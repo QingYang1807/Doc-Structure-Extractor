@@ -306,6 +306,23 @@ components:
         - key
         - value
         - confidence
+    ValidationItem:
+      type: object
+      properties:
+        field:
+          type: string
+          description: The field name involved in the issue
+        severity:
+          type: string
+          enum: [high, medium, low]
+          description: Risk level — high (error), medium (warning), low (notice)
+        issue:
+          type: string
+          description: Human-readable description of the detected problem
+      required:
+        - field
+        - severity
+        - issue
     ExtractResponse:
       type: object
       properties:
@@ -326,6 +343,11 @@ components:
         summary:
           type: string
           description: AI-generated summary of extracted information
+        validation:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationItem"
+          description: Post-extraction rule validation results (date conflicts, amount mismatches, missing required fields, etc.)
         createdAt:
           type: string
           format: date-time
