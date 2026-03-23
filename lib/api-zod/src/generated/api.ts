@@ -134,3 +134,31 @@ export const DeleteHistoryItemParams = zod.object({
 export const DeleteHistoryItemResponse = zod.object({
   success: zod.boolean(),
 });
+
+/**
+ * Converts a document to full Markdown
+ * @summary Convert a document to full Markdown
+ */
+export const MarkdownExtractBody = zod
+  .object({
+    text: zod
+      .string()
+      .optional()
+      .describe("The document text to convert (provide either text or imageData)"),
+    imageData: zod
+      .array(zod.string())
+      .optional()
+      .describe(
+        "Base64-encoded image data URIs for image/scanned-PDF conversion (provide either text or imageData)",
+      ),
+  })
+  .refine(
+    (d) =>
+      (d.text != null && d.text.trim().length > 0) ||
+      (d.imageData != null && d.imageData.length > 0),
+    { message: "Either text or imageData must be provided" },
+  );
+
+export const MarkdownExtractResponse = zod.object({
+  markdown: zod.string().describe("The complete Markdown representation of the document"),
+});

@@ -24,6 +24,8 @@ import type {
   GetHistoryParams,
   HealthStatus,
   HistoryResponse,
+  MarkdownExtractRequest,
+  MarkdownExtractResponse,
   SuccessResponse,
 } from "./api.schemas";
 
@@ -463,4 +465,90 @@ export const useDeleteHistoryItem = <
   TContext
 > => {
   return useMutation(getDeleteHistoryItemMutationOptions(options));
+};
+
+/**
+ * Converts a document to full Markdown
+ * @summary Convert a document to full Markdown
+ */
+export const getMarkdownExtractUrl = () => {
+  return `/api/markdown-extract`;
+};
+
+export const markdownExtract = async (
+  markdownExtractRequest: MarkdownExtractRequest,
+  options?: RequestInit,
+): Promise<MarkdownExtractResponse> => {
+  return customFetch<MarkdownExtractResponse>(getMarkdownExtractUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(markdownExtractRequest),
+  });
+};
+
+export const getMarkdownExtractMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markdownExtract>>,
+    TError,
+    { data: BodyType<MarkdownExtractRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof markdownExtract>>,
+  TError,
+  { data: BodyType<MarkdownExtractRequest> },
+  TContext
+> => {
+  const mutationKey = ["markdownExtract"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof markdownExtract>>,
+    { data: BodyType<MarkdownExtractRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+    return markdownExtract(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MarkdownExtractMutationResult = NonNullable<
+  Awaited<ReturnType<typeof markdownExtract>>
+>;
+export type MarkdownExtractMutationBody = BodyType<MarkdownExtractRequest>;
+export type MarkdownExtractMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Convert a document to full Markdown
+ */
+export const useMarkdownExtract = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markdownExtract>>,
+    TError,
+    { data: BodyType<MarkdownExtractRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof markdownExtract>>,
+  TError,
+  { data: BodyType<MarkdownExtractRequest> },
+  TContext
+> => {
+  return useMutation(getMarkdownExtractMutationOptions(options));
 };

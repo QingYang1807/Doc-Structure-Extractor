@@ -9,6 +9,7 @@ import {
   GetHistoryQueryParams,
   GetHistoryItemParams,
   DeleteHistoryItemParams,
+  MarkdownExtractBody,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -298,6 +299,72 @@ router.delete("/history/:id", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error deleting history item");
     res.status(500).json({ error: "delete_failed", message: String(err) });
+  }
+});
+
+const MARKDOWN_SYSTEM_MESSAGE = `你是一个专业的文档转换助手，负责将用户提供的文档（文字或图片）转换成高保真的 Markdown 格式。
+
+请严格遵守以下规则：
+
+1. **全文转换**：保留文档中的全部内容，不得省略或总结任何段落。
+2. **结构保留**：用 Markdown 标题（# ## ###）还原文档的层级结构；用有序/无序列表还原列表；用 **粗体** / *斜体* 还原强调；用 \`代码块\` 还原代码或等宽文本；用 > 引用块还原引用内容。
+3. **表格合并**：如果文档是多页 PDF，且某个表格跨越两页及以上，请将其合并为一个完整的 Markdown 表格，不得拆分。
+4. **图片替换**：文档中的每张内嵌图片、图表、示意图，请用以下格式替换（提供详细的文字描述）：
+   > [图片描述：此处用2-4句话详细描述图片/图表的内容、颜色、数据趋势或视觉含义]
+5. **脚注与页眉页脚**：保留脚注，格式为 [^n]；页眉页脚（如页码、公司名）可忽略。
+6. **只输出 Markdown**：不要添加任何解释性文字、前言或后记，直接输出 Markdown 正文。`;
+
+router.post("/markdown-extract", async (req, res) => {
+  let body: ReturnType<typeof MarkdownExtractBody.parse>;
+  try {
+    body = MarkdownExtractBody.parse(req.body);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
+    const { text, imageData } = body;
+
+    type ContentPart =
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string; detail: "high" } };
+
+    const userContent: ContentPart[] = [];
+
+    if (text && text.trim()) {
+      userContent.push({ type: "text", text: `请将以下文档内容转换为完整 Markdown：\n\n${text}` });
+    }
+
+    if (imageData && imageData.length > 0) {
+      userContent.push({
+        type: "text",
+        text: `请将以下 ${imageData.length} 张图片（文档页面）的全部内容转换为完整 Markdown，如果表格跨页请合并：`,
+      });
+      for (const dataUri of imageData) {
+        userContent.push({ type: "image_url", image_url: { url: dataUri, detail: "high" } });
+      }
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 16384,
+      messages: [
+        { role: "system", content: MARKDOWN_SYSTEM_MESSAGE },
+        { role: "user", content: userContent },
+      ],
+    });
+
+    const markdown = completion.choices[0]?.message?.content ?? "";
+
+    res.json({ markdown });
+  } catch (err) {
+    req.log.error({ err }, "Error converting document to Markdown");
+    res.status(500).json({ error: "markdown_extract_failed", message: String(err) });
   }
 });
 

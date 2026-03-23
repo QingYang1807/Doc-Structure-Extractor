@@ -107,3 +107,15 @@ export type GetHistoryParams = {
    */
   limit?: number;
 };
+
+export interface MarkdownExtractRequest {
+  /** The document text to convert (provide either text or imageData) */
+  text?: string;
+  /** Base64-encoded image data URIs for image/scanned-PDF conversion (provide either text or imageData) */
+  imageData?: string[];
+}
+
+export interface MarkdownExtractResponse {
+  /** The complete Markdown representation of the document */
+  markdown: string;
+}

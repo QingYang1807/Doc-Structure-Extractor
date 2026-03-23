@@ -57,6 +57,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /markdown-extract:
+    post:
+      operationId: markdownExtract
+      tags: [extraction]
+      summary: Convert a document to full Markdown
+      description: Converts any document (text or images) into a complete, high-fidelity Markdown representation. Cross-page tables are merged; images are replaced with detailed text descriptions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkdownExtractRequest"
+      responses:
+        "200":
+          description: Conversion successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarkdownExtractResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /history:
     get:
       operationId: getHistory
@@ -269,3 +300,22 @@ components:
           type: boolean
       required:
         - success
+    MarkdownExtractRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: The document text to convert (provide either text or imageData)
+        imageData:
+          type: array
+          items:
+            type: string
+          description: Base64-encoded image data URIs for image/scanned-PDF conversion (provide either text or imageData)
+    MarkdownExtractResponse:
+      type: object
+      properties:
+        markdown:
+          type: string
+          description: The complete Markdown representation of the document
+      required:
+        - markdown
