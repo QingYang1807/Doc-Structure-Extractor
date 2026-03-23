@@ -253,7 +253,19 @@ router.post("/extract", async (req, res) => {
       })
       .returning();
 
-    const validation = fields.length > 0 ? await runValidation(fields) : [];
+    let validation: Array<{ field: string; severity: string; issue: string }> = [];
+    if (fields.length > 0) {
+      try {
+        validation = await runValidation(fields);
+        validation = validation.filter((v) =>
+          typeof v.field === "string" &&
+          typeof v.issue === "string" &&
+          (v.severity === "high" || v.severity === "medium" || v.severity === "low")
+        );
+      } catch (valErr) {
+        req.log.warn({ valErr }, "Validation call failed, returning empty validation");
+      }
+    }
 
     res.json({
       id: job!.id,
