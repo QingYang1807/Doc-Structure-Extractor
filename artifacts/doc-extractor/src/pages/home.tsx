@@ -192,6 +192,184 @@ async function extractInputFromFile(file: File, forMarkdown = false): Promise<Ex
 
 type AppMode = "extract" | "markdown" | "qa" | "validate" | "segment";
 
+const SAMPLE_DATA: Record<AppMode, { text: string; question?: string; template?: ExtractRequestTemplate }> = {
+  extract: {
+    template: "contract",
+    text: `技术服务合同
+
+合同编号：JS-2024-0318-001
+签订地点：北京市朝阳区
+
+甲方（委托方）：北京星辰科技有限公司
+法定代表人：王建国
+地址：北京市朝阳区科技路88号星辰大厦12层
+联系电话：010-88886666
+
+乙方（服务方）：上海慧算数据服务有限公司
+法定代表人：李晓梅
+地址：上海市浦东新区张江高科技园区B栋506室
+联系电话：021-55557777
+
+一、服务内容
+乙方为甲方提供企业数据分析平台的开发与部署服务，具体包括：数据采集模块、可视化报表系统及API接口开发，共计3个功能模块。
+
+二、合同金额
+本合同总金额为人民币叁拾伍万元整（¥350,000.00），含税。
+
+三、付款方式
+合同签订后7个工作日内，甲方支付首付款人民币壹拾万元整（¥100,000.00）；项目验收通过后15个工作日内，甲方支付尾款人民币贰拾伍万元整（¥250,000.00）。
+
+四、服务期限
+本合同服务期限自2024年4月1日起至2024年9月30日止，共6个月。
+
+五、违约责任
+任何一方未按约定履行义务，须向对方支付合同总金额10%的违约金，即人民币叁万伍仟元整（¥35,000.00）。
+
+甲方代表（签字）：________________　　日期：2024年3月18日
+乙方代表（签字）：________________　　日期：2024年3月18日`,
+  },
+  markdown: {
+    text: `季度销售数据分析报告
+报告期间：2024年第一季度（1月—3月）
+编制部门：商务数据中心
+
+一、核心业绩指标
+
+本季度总销售额：¥12,486,000
+同比增长：+23.7%
+环比增长：+8.2%
+新签客户数：147家
+客户留存率：91.3%
+
+二、各区域销售数据汇总
+
+区域　　 | 销售额（万元）| 同比增长 | 完成率 | 重点客户数
+华北区　 |     3,420     |  +31.2% |  108% |    34
+华东区　 |     4,158     |  +18.6% |   96% |    51
+华南区　 |     2,730     |  +27.4% |  103% |    28
+西部区　 |     1,080     |  +15.1% |   89% |    19
+海外区　 |     1,098     |  +44.8% |  115% |    15
+合计　　 |    12,486     |  +23.7% |  102% |   147
+
+三、产品线销售占比
+
+1. 企业SaaS平台：占比42%，销售额¥5,244,000
+2. 数据分析服务：占比28%，销售额¥3,496,000
+3. 定制开发项目：占比19%，销售额¥2,372,000
+4. 技术培训课程：占比11%，销售额¥1,374,000
+
+四、问题与改进建议
+
+西部区完成率偏低（89%），建议增配销售人员，重点开发成都、西安市场；
+海外区增速最快，应加大资源投入，计划Q2增设新加坡办事处。`,
+  },
+  qa: {
+    text: `劳动合同
+
+甲方（用人单位）：深圳市未来智造科技股份有限公司
+统一社会信用代码：91440300XXXXXXXX1K
+地址：深圳市南山区科技园南区深南大道9988号10层
+
+乙方（劳动者）：陈雨晴
+身份证号码：440301199506150022
+联系电话：138-0755-8899
+家庭住址：深圳市宝安区新安街道宝民一路XX号
+
+一、劳动合同期限
+本合同为固定期限劳动合同，合同期限为3年，自2024年3月1日起至2027年2月28日止。其中试用期3个月，即2024年3月1日至2024年5月31日。
+
+二、工作岗位
+乙方担任高级产品经理岗位，工作地点为深圳市南山区科技园。
+
+三、劳动报酬
+（一）试用期月薪：人民币18,000元整。
+（二）转正后月薪：人民币25,000元整，另享有季度绩效奖金，绩效奖金按公司考核制度执行。
+（三）甲方于每月10日以银行转账方式支付上月工资。
+
+四、工作时间与休息休假
+乙方执行标准工时制度，每日工作8小时，每周工作5天。法定节假日及年假按国家相关规定执行。乙方工龄满1年可享受5天带薪年假。
+
+五、社会保险
+甲方依法为乙方缴纳养老保险、医疗保险、失业保险、工伤保险及生育保险。
+
+六、保密与竞业限制
+乙方在职期间及离职后2年内不得从事与甲方存在竞争关系的业务，不得向第三方披露甲方商业机密。违反本条款须向甲方支付违约金人民币50,000元。`,
+    question: "试用期工资是多少？试用期结束后薪资如何变化？",
+  },
+  validate: {
+    text: `采购合同
+
+合同编号：CG-2024-0215
+
+甲方（买方）：成都绿洲贸易有限公司
+乙方（卖方）：广州华丰供应链有限公司
+
+一、采购内容
+甲方向乙方采购办公设备一批，含笔记本电脑50台、显示器80台，货物明细见附件一。
+
+二、合同金额
+本合同总价款为人民币伍拾万元整（¥280,000.00）。
+（注：大写金额与数字金额不符，请核查）
+
+三、交货期限
+乙方须于2024年1月15日前完成全部货物交付。
+（注：本合同签订日期为2024年2月15日，交货期早于签订日期）
+
+四、付款方式
+合同签订后，甲方预付货款30%，即人民币捌万肆仟元整（¥84,000.00）；货物验收合格后10日内付清余款。
+（注：30%×280,000=84,000，但大写为壹拾五万元）
+
+五、质量保证
+乙方保证所提供货物符合国家标准，质保期为货物验收之日起24个月。
+
+六、违约责任
+任何一方违约，须承担合同金额的15%作为违约金。
+
+甲方代表：________________
+乙方代表：________________`,
+  },
+  segment: {
+    text: `软件许可与服务协议
+
+甲方（许可方）：杭州云智软件科技有限公司
+乙方（被许可方）：重庆山城物流集团有限公司
+签订日期：2024年3月20日
+
+第一条　定义
+本协议中，"软件"指甲方开发的"云智运营管理系统"（版本号V3.2），包含源代码、目标代码、文档及相关更新；"许可"指甲方授予乙方使用软件的非独占性权利。
+
+第二条　许可授权
+甲方授予乙方在中华人民共和国境内，将软件用于乙方内部运营管理目的的非独占、不可转让的使用权。乙方不得将软件出租、出借、转让或分许可给任何第三方。
+
+第三条　付款条款
+乙方应于合同签订后5个工作日内支付首年许可费人民币叁拾万元整（¥300,000.00）；此后每年续费金额为首年许可费的85%，即人民币贰拾伍万伍仟元整（¥255,000.00）。
+
+第四条　实施与培训
+甲方负责在乙方指定地点完成软件的安装部署，并提供不少于5天的操作培训。首次安装调试期限为合同签订后30个自然日内完成。
+
+第五条　维护支持
+合同有效期内，甲方提供5×8小时电话技术支持及年度版本升级服务。严重故障（系统不可用）响应时间不超过4小时，一般故障响应时间不超过1个工作日。
+
+第六条　知识产权
+软件的全部知识产权归甲方所有。本协议不转让任何知识产权。乙方承认软件中包含甲方的商业秘密，有义务采取合理措施保护其保密性。
+
+第七条　违约与赔偿
+任何一方违反本协议，须在收到对方书面通知后15日内纠正。逾期未纠正的，违约方须支付守约方合同金额20%的违约金，并赔偿守约方因此遭受的实际损失。
+
+第八条　合同解除
+出现下列情形之一，任何一方可书面通知解除本协议：（一）对方严重违约且未在规定期限内纠正；（二）对方进入破产、清算程序；（三）因不可抗力致使合同目的无法实现。
+
+第九条　争议解决
+因本协议引起的任何争议，双方应首先友好协商；协商不成的，提交杭州仲裁委员会按其仲裁规则进行仲裁，仲裁裁决为终局裁决。
+
+第十条　附则
+本协议自双方签字盖章之日起生效，有效期3年。未尽事宜由双方协商补充，补充协议与本协议具有同等法律效力。
+
+甲方（盖章）：________________　　乙方（盖章）：________________
+授权代表签字：________________　　授权代表签字：________________`,
+  },
+};
+
 const MODES: { id: AppMode; label: string; icon: React.ReactNode }[] = [
   { id: "extract", label: "结构化抽取", icon: <Sparkles className="w-3.5 h-3.5" /> },
   { id: "markdown", label: "Markdown 转换", icon: <FileCode2 className="w-3.5 h-3.5" /> },
@@ -222,6 +400,20 @@ export default function Home() {
 
   const handleModeSwitch = (newMode: AppMode) => {
     setMode(newMode);
+    extractMutation.reset();
+    markdownMutation.reset();
+    qaMutation.reset();
+    validateMutation.reset();
+    segmentMutation.reset();
+  };
+
+  const handleLoadSample = () => {
+    const sample = SAMPLE_DATA[mode];
+    setImageInput(null);
+    setFileError(null);
+    setText(sample.text);
+    if (sample.question) setQuestion(sample.question);
+    if (sample.template) setTemplate(sample.template);
     extractMutation.reset();
     markdownMutation.reset();
     qaMutation.reset();
@@ -419,21 +611,30 @@ export default function Home() {
 
           <Card className="p-1">
             <div className="p-5 flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <label className="font-semibold text-slate-900 flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <label className="font-semibold text-slate-900 flex items-center gap-2 shrink-0">
                   <FileText className="w-4 h-4 text-primary" />
                   文档内容
                 </label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 text-xs text-primary bg-primary/5 hover:bg-primary/10"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoadingFile}
-                >
-                  <Upload className="w-3 h-3 mr-1.5" />
-                  {isLoadingFile ? "解析中..." : "上传文件"}
-                </Button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleLoadSample}
+                    className="h-8 px-3 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200/70 rounded-lg transition-colors flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3 h-3" />
+                    加载示例
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs text-primary bg-primary/5 hover:bg-primary/10"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isLoadingFile}
+                  >
+                    <Upload className="w-3 h-3 mr-1.5" />
+                    {isLoadingFile ? "解析中..." : "上传文件"}
+                  </Button>
+                </div>
                 <input
                   type="file"
                   ref={fileInputRef}
