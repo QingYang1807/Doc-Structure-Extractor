@@ -260,17 +260,22 @@ pnpm run build
 
 ## 代码生成（API 合约更新流程）
 
+生成层由 **Orval** 驱动，从 `lib/api-spec/openapi.yaml` 自动生成以下两个包的代码：
+
+- `lib/api-client-react/src/generated/` — React Query hooks + TypeScript 接口
+- `lib/api-zod/src/generated/` — Zod 校验模式（后端请求校验用）
+
 当需要修改 API 接口时，按以下顺序操作：
 
 1. **修改 OpenAPI 规范**（`lib/api-spec/openapi.yaml`）
-2. **手动同步**以下两个生成文件（目前未配置自动生成，参照现有代码风格追加）：
-   - `lib/api-zod/src/generated/api.ts` — Zod 校验模式
-   - `lib/api-client-react/src/generated/api.ts` — React Query hooks
-   - `lib/api-client-react/src/generated/api.schemas.ts` — TypeScript 接口
-3. **重新构建 lib 声明文件**：
+2. **运行代码生成**：
    ```bash
-   pnpm --filter @workspace/api-zod exec tsc -p tsconfig.json
-   pnpm --filter @workspace/api-client-react exec tsc -p tsconfig.json
+   pnpm --filter @workspace/api-spec run codegen
+   ```
+   Orval 会自动重新生成 `lib/api-client-react/src/generated/` 和 `lib/api-zod/src/generated/` 中的所有文件。
+3. **重新构建 lib 声明文件**（让 TypeScript 项目引用看到新类型）：
+   ```bash
+   pnpm run typecheck
    ```
 4. **在后端路由** `artifacts/api-server/src/routes/extract.ts` 中添加处理函数
 5. **在前端** `artifacts/doc-extractor/src/pages/home.tsx` 中调用新 hook
@@ -302,7 +307,14 @@ pnpm run build
               $ref: "#/components/schemas/SummarizeResponse"
 ```
 
-**2. 添加 Zod 校验模式**（`lib/api-zod/src/generated/api.ts`）
+**2. 运行 Orval 代码生成**
+
+```bash
+pnpm --filter @workspace/api-spec run codegen
+pnpm run typecheck
+```
+
+生成后 `lib/api-zod/src/generated/api.ts` 中会自动出现：
 
 ```typescript
 export const SummarizeBody = zod.object({
@@ -310,14 +322,14 @@ export const SummarizeBody = zod.object({
 });
 ```
 
-**3. 添加 React Query hook**（`lib/api-client-react/src/generated/api.ts`）
+以及 `lib/api-client-react/src/generated/api.ts` 中的 hook：
 
 ```typescript
 export const useSummarizeDocument = (options?) =>
   useMutation(getSummarizeDocumentMutationOptions(options));
 ```
 
-**4. 实现后端路由**（`artifacts/api-server/src/routes/extract.ts`）
+**3. 实现后端路由**（`artifacts/api-server/src/routes/extract.ts`）
 
 ```typescript
 router.post("/summarize", async (req, res) => {
@@ -327,7 +339,7 @@ router.post("/summarize", async (req, res) => {
 });
 ```
 
-**5. 在前端调用**（`artifacts/doc-extractor/src/pages/home.tsx`）
+**4. 在前端调用**（`artifacts/doc-extractor/src/pages/home.tsx`）
 
 ```typescript
 const summarizeMutation = useSummarizeDocument();
