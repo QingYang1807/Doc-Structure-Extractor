@@ -83,8 +83,10 @@
 │   ├── db/                        # Drizzle ORM 模式 + 数据库连接（@workspace/db）
 │   │   └── src/schema/
 │   │       └── extraction_jobs.ts
+│   ├── integrations-openai-ai-server/      # Replit 托管的 OpenAI 客户端（服务端用）
+│   ├── integrations-openai-ai-react/       # Replit 托管的 OpenAI 客户端（前端用）
 │   └── integrations/
-│       └── integrations-openai-ai-server/  # Replit 托管的 OpenAI 客户端
+│       └── openai_ai_integrations/         # Replit AI Integrations 底层配置
 ├── scripts/                       # 工具脚本
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json             # 共享 TypeScript 配置
