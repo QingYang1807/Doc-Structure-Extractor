@@ -82,12 +82,26 @@ export type ExtractionInput =
   | { kind: "text"; text: string }
   | { kind: "images"; imageData: string[]; label: string };
 
-async function extractInputFromFile(file: File): Promise<ExtractionInput> {
+async function pdfToImages(pdf: pdfjsLib.PDFDocumentProxy, maxPages: number, filename: string): Promise<ExtractionInput> {
+  const imageData: string[] = [];
+  for (let i = 1; i <= Math.min(pdf.numPages, maxPages); i++) {
+    const page = await pdf.getPage(i);
+    imageData.push(await pdfPageToDataUri(page));
+  }
+  return { kind: "images", imageData, label: `${filename}（共 ${pdf.numPages} 页）` };
+}
+
+async function extractInputFromFile(file: File, forMarkdown = false): Promise<ExtractionInput> {
   const name = file.name.toLowerCase();
 
   if (name.endsWith(".pdf") || file.type === "application/pdf") {
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+    if (forMarkdown) {
+      return pdfToImages(pdf, 20, file.name);
+    }
+
     const pages: string[] = [];
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
@@ -106,12 +120,7 @@ async function extractInputFromFile(file: File): Promise<ExtractionInput> {
       return { kind: "text", text: fullText };
     }
 
-    const imageData: string[] = [];
-    for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
-      const page = await pdf.getPage(i);
-      imageData.push(await pdfPageToDataUri(page));
-    }
-    return { kind: "images", imageData, label: `${file.name}（扫描版 PDF，共 ${pdf.numPages} 页）` };
+    return pdfToImages(pdf, 10, file.name);
   }
 
   if (
@@ -194,7 +203,7 @@ export default function Home() {
 
     setIsLoadingFile(true);
     try {
-      const input = await extractInputFromFile(file);
+      const input = await extractInputFromFile(file, mode === "markdown");
       if (input.kind === "text") {
         setText(input.text);
       } else {
