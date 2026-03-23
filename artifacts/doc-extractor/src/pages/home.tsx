@@ -821,7 +821,7 @@ export default function Home() {
                       <div>
                         <p className="text-sm font-medium text-purple-900">条款切分说明</p>
                         <p className="text-xs text-purple-700 mt-1 leading-relaxed">
-                          AI 将按语义将文档拆分为条款卡片，每张卡片包含标题、类型、原文和摘要，适合快速浏览合同结构。
+                          AI 将按语义将文档拆分为条款卡片，每张卡片包含标题、分类标签、补充标签及完整原文，适合快速浏览合同结构。
                         </p>
                       </div>
                     </div>

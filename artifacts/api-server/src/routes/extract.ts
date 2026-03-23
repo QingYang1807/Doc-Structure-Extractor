@@ -784,7 +784,14 @@ router.post("/clause-split", async (req, res) => {
       parsed = { total: 0, clauses: [] };
     }
 
-    const clauses = Array.isArray(parsed.clauses) ? parsed.clauses : [];
+    const rawClauses = Array.isArray(parsed.clauses) ? parsed.clauses : [];
+    const clauses = rawClauses.map((c, i) => ({
+      id: typeof c.id === "string" && c.id ? c.id : `clause-${i + 1}`,
+      title: typeof c.title === "string" ? c.title : "",
+      text: typeof c.text === "string" ? c.text : "",
+      category: typeof c.category === "string" && c.category ? c.category : "其他",
+      tags: Array.isArray(c.tags) ? c.tags.filter((t): t is string => typeof t === "string") : [],
+    }));
 
     res.json({
       total: parsed.total ?? clauses.length,
