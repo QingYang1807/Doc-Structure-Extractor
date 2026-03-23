@@ -888,9 +888,7 @@ export default function Home() {
                   )}
 
                   {/* Validation Report */}
-                  {extractMutation.data.validation != null && (
-                    <ValidationReport items={extractMutation.data.validation} />
-                  )}
+                  <ValidationReport items={extractMutation.data.validation ?? []} />
 
                   <Card className="flex-1 flex flex-col min-h-[500px]">
                     <div className="flex border-b border-slate-100 bg-slate-50/50 rounded-t-2xl p-1">
@@ -1065,8 +1063,13 @@ const VALIDATION_SEVERITY_CONFIG = {
   },
 } as const;
 
+const SEVERITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
 function ValidationReport({ items }: { items: ValidationItem[] }) {
   const passed = items.length === 0;
+  const sorted = [...items].sort(
+    (a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3)
+  );
 
   return (
     <Card className="p-5 flex flex-col gap-3">
@@ -1083,7 +1086,7 @@ function ValidationReport({ items }: { items: ValidationItem[] }) {
         </div>
       ) : (
         <div className="flex flex-col gap-2">
-          {items.map((item, idx) => {
+          {sorted.map((item, idx) => {
             const cfg = VALIDATION_SEVERITY_CONFIG[item.severity as keyof typeof VALIDATION_SEVERITY_CONFIG]
               ?? VALIDATION_SEVERITY_CONFIG.medium;
             const { Icon } = cfg;
