@@ -1382,14 +1382,27 @@ function ClauseCardItem({ clause }: { clause: ClauseCard }) {
 }
 
 function SegmentResultPanel({ result }: { result: { clauses: ClauseCard[]; totalClauses: number } }) {
+  const handleDownloadSegmentJSON = () => {
+    downloadFile(
+      JSON.stringify({ totalClauses: result.totalClauses, clauses: result.clauses }, null, 2),
+      "clauses.json",
+      "application/json"
+    );
+  };
+
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2">
           <CheckCircle2 className="w-6 h-6 text-emerald-500" />
           条款切分结果
         </h2>
-        <span className="text-sm text-slate-500 font-normal">共 {result.totalClauses} 个条款</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-slate-500 font-normal">共 {result.totalClauses} 个条款</span>
+          <Button variant="outline" size="sm" onClick={handleDownloadSegmentJSON}>
+            <Download className="w-4 h-4 mr-1.5" /> 下载 JSON
+          </Button>
+        </div>
       </div>
 
       <Card className="p-5 bg-gradient-to-br from-purple-50 to-indigo-50/30 border-purple-100/60">

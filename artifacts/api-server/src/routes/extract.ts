@@ -645,7 +645,7 @@ router.post("/segment", async (req, res) => {
 
     const completion = await openai.chat.completions.create({
       model: "gpt-5.2",
-      max_completion_tokens: 8192,
+      max_completion_tokens: 16384,
       messages: [
         { role: "system", content: SEGMENT_SYSTEM_MESSAGE },
         { role: "user", content: userContent },
