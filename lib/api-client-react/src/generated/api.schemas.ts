@@ -100,14 +100,6 @@ export interface SuccessResponse {
   success: boolean;
 }
 
-export type GetHistoryParams = {
-  /**
-   * @minimum 1
-   * @maximum 100
-   */
-  limit?: number;
-};
-
 export interface MarkdownExtractRequest {
   /** The document text to convert (provide either text or imageData) */
   text?: string;
@@ -119,3 +111,136 @@ export interface MarkdownExtractResponse {
   /** The complete Markdown representation of the document */
   markdown: string;
 }
+
+export type ValidateRequest = unknown & {
+  /** The document text to validate (provide either text or imageData) */
+  text?: string;
+  /** Base64-encoded image data URIs for image/scanned-PDF validation */
+  imageData?: string[];
+};
+
+/**
+ * Issue severity level
+ */
+export type ValidateIssueSeverity =
+  (typeof ValidateIssueSeverity)[keyof typeof ValidateIssueSeverity];
+
+export const ValidateIssueSeverity = {
+  error: "error",
+  warning: "warning",
+  info: "info",
+} as const;
+
+/**
+ * Category of the validation issue
+ */
+export type ValidateIssueType =
+  (typeof ValidateIssueType)[keyof typeof ValidateIssueType];
+
+export const ValidateIssueType = {
+  date_conflict: "date_conflict",
+  amount_inconsistency: "amount_inconsistency",
+  missing_field: "missing_field",
+  logic_error: "logic_error",
+  format_error: "format_error",
+  other: "other",
+} as const;
+
+export interface ValidateIssue {
+  /** Issue severity level */
+  severity: ValidateIssueSeverity;
+  /** Category of the validation issue */
+  type: ValidateIssueType;
+  /** Human-readable description of the issue */
+  description: string;
+  /** Where in the document the issue was found (clause, paragraph, or field reference) */
+  location?: string;
+  /** Verbatim quote from the document showing the problematic content */
+  evidence?: string;
+}
+
+export interface ValidateResponse {
+  /** True if no errors were found (warnings/info may still be present) */
+  passed: boolean;
+  /** One-sentence overall assessment of the document validity */
+  summary: string;
+  /** Array of detected issues, sorted by severity */
+  issues: ValidateIssue[];
+}
+
+export type SegmentRequest = unknown & {
+  /** The document text to segment (provide either text or imageData) */
+  text?: string;
+  /** Base64-encoded image data URIs for image/scanned-PDF segmentation */
+  imageData?: string[];
+};
+
+/**
+ * Semantic type of the clause
+ */
+export type ClauseCardType =
+  (typeof ClauseCardType)[keyof typeof ClauseCardType];
+
+export const ClauseCardType = {
+  definitions: "definitions",
+  obligations: "obligations",
+  payment: "payment",
+  deadline: "deadline",
+  liability: "liability",
+  termination: "termination",
+  dispute: "dispute",
+  misc: "misc",
+  preamble: "preamble",
+  signature: "signature",
+} as const;
+
+export interface ClauseCard {
+  /** 1-based clause index */
+  index: number;
+  /** Short title/label for the clause (e.g. "付款条款", "违约责任") */
+  label: string;
+  /** Semantic type of the clause */
+  type: ClauseCardType;
+  /** Full verbatim text of the clause */
+  content: string;
+  /** One-sentence plain-language summary of the clause */
+  summary: string;
+}
+
+export interface SegmentResponse {
+  /** Ordered array of segmented clause cards */
+  clauses: ClauseCard[];
+  /** Total number of clauses found */
+  totalClauses: number;
+}
+
+export interface QaRequest {
+  /** The document text to query (provide either text or imageData) */
+  text?: string;
+  /** Base64-encoded image data URIs for image/scanned-PDF querying (provide either text or imageData) */
+  imageData?: string[];
+  /** The natural language question to answer using the document */
+  question: string;
+}
+
+export interface QaEvidenceItem {
+  /** Verbatim quote from the document that supports the answer */
+  quote: string;
+  /** Brief explanation of how this quote relates to the question */
+  context: string;
+}
+
+export interface QaResponse {
+  /** Concise answer to the question, or an explicit statement that the document does not contain the answer */
+  answer: string;
+  /** Array of verbatim quotes from the document that support the answer */
+  evidence: QaEvidenceItem[];
+}
+
+export type GetHistoryParams = {
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+};

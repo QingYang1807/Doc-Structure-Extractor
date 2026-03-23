@@ -10,6 +10,9 @@ import {
   GetHistoryItemParams,
   DeleteHistoryItemParams,
   MarkdownExtractBody,
+  DocumentQaBody,
+  ValidateDocumentBody,
+  SegmentDocumentBody,
 } from "@workspace/api-zod";
 
 const router: IRouter = Router();
@@ -365,6 +368,306 @@ router.post("/markdown-extract", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Error converting document to Markdown");
     res.status(500).json({ error: "markdown_extract_failed", message: String(err) });
+  }
+});
+
+const VALIDATE_SYSTEM_MESSAGE = `你是一个专业的文档合规审查助手。你的任务是仔细阅读文档，检测其中存在的各类问题，包括但不限于：
+1. **日期冲突**：文档内不同日期之间的矛盾（如签订日期晚于截止日期，有效期已过等）
+2. **金额不一致**：大写金额与数字金额不符，不同条款中同一金额的描述矛盾
+3. **缺少必要字段**：合同类文档缺少甲方/乙方/签章/合同编号/有效期等必要信息
+4. **逻辑错误**：条款之间互相矛盾，义务分配不合理，不可能同时成立的条件
+5. **格式错误**：明显的格式问题（如日期格式错误、身份证号位数不符等）
+
+严格规则：
+- 只报告文档中实际存在的问题，不要凭空臆测
+- 每个问题的 evidence 字段必须是文档原文的逐字引用
+- severity 按问题严重性分级：error（严重）、warning（警告）、info（提示）
+- type 从以下类别中选择：date_conflict、amount_inconsistency、missing_field、logic_error、format_error、other
+- 如果文档完全合规，issues 返回空数组，passed 为 true
+
+严格按照以下 JSON 格式返回，不要有任何其他文字：
+{
+  "passed": true/false,
+  "summary": "一句话总结文档合规情况",
+  "issues": [
+    {
+      "severity": "error|warning|info",
+      "type": "date_conflict|amount_inconsistency|missing_field|logic_error|format_error|other",
+      "description": "问题的具体描述",
+      "location": "问题所在的条款/段落/字段（可选）",
+      "evidence": "文档中的原始语句（逐字复制，如无则省略此字段）"
+    }
+  ]
+}`;
+
+const SEGMENT_SYSTEM_MESSAGE = `你是一个专业的法律文档结构化分析助手。你的任务是将用户提供的文档切分为具有语义意义的条款卡片，每个卡片代表文档的一个独立条款或段落。
+
+切分原则：
+1. 按自然段落、编号条款、或语义完整性进行切分
+2. 每个条款卡片应包含语义完整的内容，不要切分得过细
+3. content 字段必须包含该条款的完整原文，一字不差
+4. label 应简洁明了，2-6个汉字，准确概括该条款的核心内容
+5. type 从以下类型中选择最合适的：
+   - preamble：序言/前言/背景说明
+   - definitions：定义/术语解释
+   - obligations：权利义务
+   - payment：付款/费用相关
+   - deadline：期限/时间节点
+   - liability：违约/赔偿/责任
+   - termination：解除/终止/撤销
+   - dispute：争议/纠纷/仲裁
+   - signature：签署/盖章/附件
+   - misc：其他/附则/一般条款
+6. summary 用一句话简明扼要地概括该条款的核心内容（不超过50字）
+
+严格按照以下 JSON 格式返回，不要有任何其他文字：
+{
+  "totalClauses": 数字,
+  "clauses": [
+    {
+      "index": 1,
+      "label": "条款标题",
+      "type": "preamble|definitions|obligations|payment|deadline|liability|termination|dispute|misc|signature",
+      "content": "条款完整原文",
+      "summary": "一句话摘要"
+    }
+  ]
+}`;
+
+router.post("/validate", async (req, res) => {
+  let body: ReturnType<typeof ValidateDocumentBody.parse>;
+  try {
+    body = ValidateDocumentBody.parse(req.body);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
+    const { text, imageData } = body;
+
+    type ContentPart =
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string; detail: "high" } };
+
+    const userContent: ContentPart[] = [];
+
+    if (text && text.trim()) {
+      userContent.push({ type: "text", text: `文档内容：\n\n${text}` });
+    }
+
+    if (imageData && imageData.length > 0) {
+      userContent.push({
+        type: "text",
+        text: `以下是文档的 ${imageData.length} 张页面图片，请仔细审查其中的合规问题：`,
+      });
+      for (const dataUri of imageData) {
+        userContent.push({ type: "image_url", image_url: { url: dataUri, detail: "high" } });
+      }
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 4096,
+      messages: [
+        { role: "system", content: VALIDATE_SYSTEM_MESSAGE },
+        { role: "user", content: userContent },
+      ],
+    });
+
+    const responseContent = completion.choices[0]?.message?.content ?? "{}";
+
+    let parsed: {
+      passed: boolean;
+      summary: string;
+      issues: Array<{
+        severity: string;
+        type: string;
+        description: string;
+        location?: string;
+        evidence?: string;
+      }>;
+    };
+    try {
+      parsed = JSON.parse(responseContent) as typeof parsed;
+    } catch {
+      parsed = { passed: false, summary: "无法解析 AI 响应", issues: [] };
+    }
+
+    const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
+    const hasErrors = issues.some((i) => i.severity === "error");
+
+    res.json({
+      passed: parsed.passed ?? !hasErrors,
+      summary: parsed.summary ?? "",
+      issues,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error validating document");
+    res.status(500).json({ error: "validate_failed", message: String(err) });
+  }
+});
+
+router.post("/segment", async (req, res) => {
+  let body: ReturnType<typeof SegmentDocumentBody.parse>;
+  try {
+    body = SegmentDocumentBody.parse(req.body);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
+    const { text, imageData } = body;
+
+    type ContentPart =
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string; detail: "high" } };
+
+    const userContent: ContentPart[] = [];
+
+    if (text && text.trim()) {
+      userContent.push({ type: "text", text: `文档内容：\n\n${text}` });
+    }
+
+    if (imageData && imageData.length > 0) {
+      userContent.push({
+        type: "text",
+        text: `以下是文档的 ${imageData.length} 张页面图片，请对文档进行条款切分：`,
+      });
+      for (const dataUri of imageData) {
+        userContent.push({ type: "image_url", image_url: { url: dataUri, detail: "high" } });
+      }
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 8192,
+      messages: [
+        { role: "system", content: SEGMENT_SYSTEM_MESSAGE },
+        { role: "user", content: userContent },
+      ],
+    });
+
+    const responseContent = completion.choices[0]?.message?.content ?? "{}";
+
+    let parsed: {
+      totalClauses: number;
+      clauses: Array<{
+        index: number;
+        label: string;
+        type: string;
+        content: string;
+        summary: string;
+      }>;
+    };
+    try {
+      parsed = JSON.parse(responseContent) as typeof parsed;
+    } catch {
+      parsed = { totalClauses: 0, clauses: [] };
+    }
+
+    const clauses = Array.isArray(parsed.clauses) ? parsed.clauses : [];
+
+    res.json({
+      totalClauses: parsed.totalClauses ?? clauses.length,
+      clauses,
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error segmenting document");
+    res.status(500).json({ error: "segment_failed", message: String(err) });
+  }
+});
+
+const QA_SYSTEM_MESSAGE = `你是一个专业的文档问答助手。你的职责是：根据用户提供的文档内容，回答用户的问题，并且每个回答都必须以文档原文为据。
+
+严格规则：
+1. **答案必须来自文档**：只允许使用文档中明确存在的信息作答。如果文档中没有相关内容，必须直接回复"文档中未提及此信息"，绝对不能编造或推断。
+2. **引用必须是逐字原文**：evidence 数组中的每个 quote 字段，必须是文档中的原始语句，一字不差地复制，不得改写或概括。
+3. **JSON 格式返回**：严格按照以下 JSON 格式返回，不要有任何其他文字：
+{
+  "answer": "简洁的回答（1-3句话）",
+  "evidence": [
+    {
+      "quote": "文档中的原始语句（逐字复制）",
+      "context": "这段引用与问题的关联说明（1句话）"
+    }
+  ]
+}
+4. 如果文档中找不到任何相关证据，evidence 返回空数组 []，answer 说明"文档中未提及"。`;
+
+router.post("/qa", async (req, res) => {
+  let body: ReturnType<typeof DocumentQaBody.parse>;
+  try {
+    body = DocumentQaBody.parse(req.body);
+  } catch (err: unknown) {
+    if (err instanceof ZodError) {
+      res.status(400).json({ error: "invalid_request", message: zodErrorMessage(err) });
+      return;
+    }
+    res.status(400).json({ error: "invalid_request", message: String(err) });
+    return;
+  }
+
+  try {
+    const { text, imageData, question } = body;
+
+    type ContentPart =
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string; detail: "high" } };
+
+    const userContent: ContentPart[] = [];
+
+    if (text && text.trim()) {
+      userContent.push({
+        type: "text",
+        text: `文档内容：\n\n${text}\n\n---\n\n问题：${question}`,
+      });
+    }
+
+    if (imageData && imageData.length > 0) {
+      userContent.push({
+        type: "text",
+        text: `以下是文档的 ${imageData.length} 张页面图片，请阅读后回答问题：${question}`,
+      });
+      for (const dataUri of imageData) {
+        userContent.push({ type: "image_url", image_url: { url: dataUri, detail: "high" } });
+      }
+    }
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-5.2",
+      max_completion_tokens: 4096,
+      messages: [
+        { role: "system", content: QA_SYSTEM_MESSAGE },
+        { role: "user", content: userContent },
+      ],
+    });
+
+    const responseContent = completion.choices[0]?.message?.content ?? "{}";
+
+    let parsed: { answer: string; evidence: Array<{ quote: string; context: string }> };
+    try {
+      parsed = JSON.parse(responseContent) as typeof parsed;
+    } catch {
+      parsed = { answer: "无法解析 AI 响应", evidence: [] };
+    }
+
+    res.json({
+      answer: parsed.answer ?? "",
+      evidence: Array.isArray(parsed.evidence) ? parsed.evidence : [],
+    });
+  } catch (err) {
+    req.log.error({ err }, "Error answering document question");
+    res.status(500).json({ error: "qa_failed", message: String(err) });
   }
 });
 

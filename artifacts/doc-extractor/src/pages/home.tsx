@@ -1,13 +1,27 @@
 import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useExtractDocument, useMarkdownExtract } from "@workspace/api-client-react";
-import type { ExtractRequestTemplate, ExtractedField } from "@workspace/api-client-react";
+import {
+  useExtractDocument,
+  useMarkdownExtract,
+  useDocumentQa,
+  useValidateDocument,
+  useSegmentDocument,
+} from "@workspace/api-client-react";
+import type {
+  ExtractRequestTemplate,
+  ExtractedField,
+  QaEvidenceItem,
+  ValidateIssue,
+  ClauseCard,
+} from "@workspace/api-client-react";
 import { Layout } from "@/components/layout";
 import { Button, Card, Textarea, Input, Badge } from "@/components/ui-elements";
 import {
   FileText, Upload, Sparkles, AlertCircle, FileJson,
   Table as TableIcon, Download, CheckCircle2, Image as ImageIcon,
-  Copy, FileCode2,
+  Copy, FileCode2, MessageCircleQuestion, Quote,
+  ShieldCheck, Scissors, ChevronDown, ChevronUp,
+  XCircle, Info, TriangleAlert,
 } from "lucide-react";
 import Papa from "papaparse";
 import { downloadFile } from "@/lib/utils";
@@ -176,7 +190,15 @@ async function extractInputFromFile(file: File, forMarkdown = false): Promise<Ex
   return { kind: "text", text: await file.text() };
 }
 
-type AppMode = "extract" | "markdown";
+type AppMode = "extract" | "markdown" | "qa" | "validate" | "segment";
+
+const MODES: { id: AppMode; label: string; icon: React.ReactNode }[] = [
+  { id: "extract", label: "结构化抽取", icon: <Sparkles className="w-3.5 h-3.5" /> },
+  { id: "markdown", label: "Markdown 转换", icon: <FileCode2 className="w-3.5 h-3.5" /> },
+  { id: "qa", label: "智能问答", icon: <MessageCircleQuestion className="w-3.5 h-3.5" /> },
+  { id: "validate", label: "规则校验", icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+  { id: "segment", label: "条款切分", icon: <Scissors className="w-3.5 h-3.5" /> },
+];
 
 export default function Home() {
   const [mode, setMode] = useState<AppMode>("extract");
@@ -184,6 +206,7 @@ export default function Home() {
   const [imageInput, setImageInput] = useState<{ imageData: string[]; label: string; truncatedAt?: number; totalPages?: number } | null>(null);
   const [template, setTemplate] = useState<ExtractRequestTemplate>("general");
   const [customFieldsStr, setCustomFieldsStr] = useState("");
+  const [question, setQuestion] = useState("");
   const [activeTab, setActiveTab] = useState<"visual" | "json">("visual");
   const [markdownTab, setMarkdownTab] = useState<"preview" | "raw">("preview");
   const [fileError, setFileError] = useState<string | null>(null);
@@ -193,11 +216,17 @@ export default function Home() {
 
   const extractMutation = useExtractDocument();
   const markdownMutation = useMarkdownExtract();
+  const qaMutation = useDocumentQa();
+  const validateMutation = useValidateDocument();
+  const segmentMutation = useSegmentDocument();
 
   const handleModeSwitch = (newMode: AppMode) => {
     setMode(newMode);
     extractMutation.reset();
     markdownMutation.reset();
+    qaMutation.reset();
+    validateMutation.reset();
+    segmentMutation.reset();
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -239,7 +268,6 @@ export default function Home() {
         template === "custom"
           ? customFieldsStr.split(",").map((s) => s.trim()).filter(Boolean)
           : undefined;
-
       extractMutation.mutate({
         data: {
           ...(hasText ? { text } : {}),
@@ -248,8 +276,31 @@ export default function Home() {
           ...(customFields && customFields.length > 0 ? { customFields } : {}),
         },
       });
-    } else {
+    } else if (mode === "markdown") {
       markdownMutation.mutate({
+        data: {
+          ...(hasText ? { text } : {}),
+          ...(hasImages ? { imageData: imageInput!.imageData } : {}),
+        },
+      });
+    } else if (mode === "qa") {
+      if (!question.trim()) return;
+      qaMutation.mutate({
+        data: {
+          ...(hasText ? { text } : {}),
+          ...(hasImages ? { imageData: imageInput!.imageData } : {}),
+          question: question.trim(),
+        },
+      });
+    } else if (mode === "validate") {
+      validateMutation.mutate({
+        data: {
+          ...(hasText ? { text } : {}),
+          ...(hasImages ? { imageData: imageInput!.imageData } : {}),
+        },
+      });
+    } else if (mode === "segment") {
+      segmentMutation.mutate({
         data: {
           ...(hasText ? { text } : {}),
           ...(hasImages ? { imageData: imageInput!.imageData } : {}),
@@ -292,13 +343,47 @@ export default function Home() {
     downloadFile(markdownMutation.data.markdown, "document.md", "text/markdown;charset=utf-8;");
   };
 
-  const canSubmit = text.trim().length > 0 || (imageInput != null && imageInput.imageData.length > 0);
-  const extractResult = extractMutation.data;
-  const markdownResult = markdownMutation.data;
-  const hasResult = mode === "extract" ? !!extractResult : !!markdownResult;
+  const canSubmit =
+    (text.trim().length > 0 || (imageInput != null && imageInput.imageData.length > 0)) &&
+    (mode !== "qa" || question.trim().length > 0);
 
-  const isPending = mode === "extract" ? extractMutation.isPending : markdownMutation.isPending;
-  const isError = mode === "extract" ? extractMutation.isError : markdownMutation.isError;
+  const currentMutation =
+    mode === "extract" ? extractMutation :
+    mode === "markdown" ? markdownMutation :
+    mode === "qa" ? qaMutation :
+    mode === "validate" ? validateMutation :
+    segmentMutation;
+
+  const isPending = currentMutation.isPending;
+  const isError = currentMutation.isError;
+
+  const hasResult =
+    mode === "extract" ? !!extractMutation.data :
+    mode === "markdown" ? !!markdownMutation.data :
+    mode === "qa" ? !!qaMutation.data :
+    mode === "validate" ? !!validateMutation.data :
+    !!segmentMutation.data;
+
+  const submitLabel =
+    mode === "extract" ? (isPending ? "AI 正在分析..." : "开始智能抽取") :
+    mode === "markdown" ? (isPending ? "AI 正在转换..." : "开始 Markdown 转换") :
+    mode === "qa" ? (isPending ? "AI 正在检索文档..." : "提交问题") :
+    mode === "validate" ? (isPending ? "AI 正在审查..." : "开始规则校验") :
+    (isPending ? "AI 正在切分..." : "开始条款切分");
+
+  const submitIcon =
+    mode === "extract" ? <Sparkles className="w-5 h-5 mr-2" /> :
+    mode === "markdown" ? <FileCode2 className="w-5 h-5 mr-2" /> :
+    mode === "qa" ? <MessageCircleQuestion className="w-5 h-5 mr-2" /> :
+    mode === "validate" ? <ShieldCheck className="w-5 h-5 mr-2" /> :
+    <Scissors className="w-5 h-5 mr-2" />;
+
+  const errorLabel =
+    mode === "extract" ? "抽取失败，请检查文档内容或稍后重试。" :
+    mode === "markdown" ? "转换失败，请检查文档内容或稍后重试。" :
+    mode === "qa" ? "问答失败，请检查文档内容或稍后重试。" :
+    mode === "validate" ? "规则校验失败，请检查文档内容或稍后重试。" :
+    "条款切分失败，请检查文档内容或稍后重试。";
 
   return (
     <Layout>
@@ -315,29 +400,21 @@ export default function Home() {
           </div>
 
           {/* Mode Toggle */}
-          <div className="flex rounded-xl bg-slate-100 p-1 gap-1">
-            <button
-              onClick={() => handleModeSwitch("extract")}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
-                mode === "extract"
-                  ? "bg-white text-primary shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <Sparkles className="w-4 h-4 inline mr-1.5 align-text-bottom" />
-              结构化抽取
-            </button>
-            <button
-              onClick={() => handleModeSwitch("markdown")}
-              className={`flex-1 py-2 text-sm font-semibold rounded-lg transition-all ${
-                mode === "markdown"
-                  ? "bg-white text-primary shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              <FileCode2 className="w-4 h-4 inline mr-1.5 align-text-bottom" />
-              Markdown 转换
-            </button>
+          <div className="grid grid-cols-5 rounded-xl bg-slate-100 p-1 gap-1">
+            {MODES.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => handleModeSwitch(m.id)}
+                className={`flex flex-col items-center gap-1 py-2 px-1 text-xs font-semibold rounded-lg transition-all ${
+                  mode === m.id
+                    ? "bg-white text-primary shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {m.icon}
+                <span className="leading-tight text-center">{m.label}</span>
+              </button>
+            ))}
           </div>
 
           <Card className="p-1">
@@ -393,7 +470,7 @@ export default function Home() {
               ) : (
                 <Textarea
                   placeholder={`在此粘贴文档内容，或上传文件（支持 ${ACCEPTED_LABEL}）...`}
-                  className="h-64 resize-none bg-slate-50/50 border-slate-200/60 focus:bg-white"
+                  className="h-48 resize-none bg-slate-50/50 border-slate-200/60 focus:bg-white"
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                 />
@@ -467,6 +544,90 @@ export default function Home() {
               )}
             </AnimatePresence>
 
+            {/* Question input — only in QA mode */}
+            <AnimatePresence>
+              {mode === "qa" && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="border-t border-slate-100 p-5 flex flex-col gap-3 bg-slate-50/30">
+                    <label className="font-semibold text-slate-900 flex items-center gap-2">
+                      <MessageCircleQuestion className="w-4 h-4 text-primary" />
+                      提问
+                    </label>
+                    <Input
+                      placeholder="输入您想问的问题，例如：合同的甲方是谁？付款金额是多少？"
+                      value={question}
+                      onChange={(e) => setQuestion(e.target.value)}
+                      className="bg-white"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && canSubmit && !isPending) {
+                          e.preventDefault();
+                          handleSubmit();
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-slate-400">AI 将严格依据文档原文作答，并引用相关原句作为证据</p>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Validate mode description */}
+            <AnimatePresence>
+              {mode === "validate" && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="border-t border-slate-100 p-5 bg-slate-50/30">
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-blue-50 border border-blue-100">
+                      <ShieldCheck className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-900">规则校验检测内容</p>
+                        <ul className="text-xs text-blue-700 mt-1.5 space-y-0.5">
+                          <li>• 日期冲突（签订日期、截止日期、有效期等）</li>
+                          <li>• 金额不一致（大写与数字不符等）</li>
+                          <li>• 缺少必要字段（甲方、乙方、签章等）</li>
+                          <li>• 逻辑错误（条款互相矛盾等）</li>
+                          <li>• 格式错误（日期格式、身份证号等）</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Segment mode description */}
+            <AnimatePresence>
+              {mode === "segment" && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="border-t border-slate-100 p-5 bg-slate-50/30">
+                    <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-50 border border-purple-100">
+                      <Scissors className="w-5 h-5 text-purple-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium text-purple-900">条款切分说明</p>
+                        <p className="text-xs text-purple-700 mt-1 leading-relaxed">
+                          AI 将按语义将文档拆分为条款卡片，每张卡片包含标题、类型、原文和摘要，适合快速浏览合同结构。
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <div className="p-5 border-t border-slate-100">
               <Button
                 className="w-full"
@@ -475,22 +636,13 @@ export default function Home() {
                 disabled={!canSubmit}
                 isLoading={isPending}
               >
-                {mode === "extract" ? (
-                  <>
-                    <Sparkles className="w-5 h-5 mr-2" />
-                    {isPending ? "AI 正在分析..." : "开始智能抽取"}
-                  </>
-                ) : (
-                  <>
-                    <FileCode2 className="w-5 h-5 mr-2" />
-                    {isPending ? "AI 正在转换..." : "开始 Markdown 转换"}
-                  </>
-                )}
+                {submitIcon}
+                {submitLabel}
               </Button>
               {isError && (
                 <div className="mt-3 p-3 bg-rose-50 text-rose-600 rounded-lg text-sm flex items-start gap-2">
                   <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-                  <span>{mode === "extract" ? "抽取失败，请检查文档内容或稍后重试。" : "转换失败，请检查文档内容或稍后重试。"}</span>
+                  <span>{errorLabel}</span>
                 </div>
               )}
             </div>
@@ -506,7 +658,7 @@ export default function Home() {
               animate={{ opacity: 1, x: 0 }}
               className="flex-1 flex flex-col gap-6"
             >
-              {mode === "extract" && extractResult ? (
+              {mode === "extract" && extractMutation.data ? (
                 <>
                   <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2">
@@ -523,13 +675,13 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {extractResult.summary && (
+                  {extractMutation.data.summary && (
                     <Card className="p-5 bg-gradient-to-br from-blue-50 to-indigo-50/30 border-blue-100/50">
                       <h3 className="text-sm font-bold text-blue-900 mb-2 flex items-center gap-1.5">
                         <Sparkles className="w-4 h-4 text-blue-600" />
                         AI 摘要
                       </h3>
-                      <p className="text-sm text-slate-700 leading-relaxed">{extractResult.summary}</p>
+                      <p className="text-sm text-slate-700 leading-relaxed">{extractMutation.data.summary}</p>
                     </Card>
                   )}
 
@@ -558,10 +710,10 @@ export default function Home() {
                     <div className="p-5 flex-1 overflow-auto bg-slate-50/20">
                       {activeTab === "visual" ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {extractResult.fields.map((field, idx) => (
+                          {extractMutation.data.fields.map((field, idx) => (
                             <FieldCard key={idx} field={field} />
                           ))}
-                          {extractResult.fields.length === 0 && (
+                          {extractMutation.data.fields.length === 0 && (
                             <div className="col-span-full py-12 text-center text-slate-500">
                               未能抽取到相关字段
                             </div>
@@ -569,13 +721,13 @@ export default function Home() {
                         </div>
                       ) : (
                         <pre className="p-4 rounded-xl bg-slate-900 text-slate-50 text-sm overflow-x-auto shadow-inner">
-                          <code>{JSON.stringify(extractResult.rawJson, null, 2)}</code>
+                          <code>{JSON.stringify(extractMutation.data.rawJson, null, 2)}</code>
                         </pre>
                       )}
                     </div>
                   </Card>
                 </>
-              ) : mode === "markdown" && markdownResult ? (
+              ) : mode === "markdown" && markdownMutation.data ? (
                 <>
                   <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2">
@@ -619,17 +771,23 @@ export default function Home() {
                       {markdownTab === "preview" ? (
                         <article className="prose prose-slate max-w-none prose-headings:font-display prose-table:text-sm">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {markdownResult.markdown}
+                            {markdownMutation.data.markdown}
                           </ReactMarkdown>
                         </article>
                       ) : (
                         <pre className="p-4 rounded-xl bg-slate-900 text-slate-50 text-sm overflow-x-auto shadow-inner whitespace-pre-wrap break-words">
-                          <code>{markdownResult.markdown}</code>
+                          <code>{markdownMutation.data.markdown}</code>
                         </pre>
                       )}
                     </div>
                   </Card>
                 </>
+              ) : mode === "qa" && qaMutation.data ? (
+                <QaResultPanel question={question} result={qaMutation.data} />
+              ) : mode === "validate" && validateMutation.data ? (
+                <ValidateResultPanel result={validateMutation.data} />
+              ) : mode === "segment" && segmentMutation.data ? (
+                <SegmentResultPanel result={segmentMutation.data} />
               ) : null}
             </motion.div>
           ) : (
@@ -650,7 +808,13 @@ export default function Home() {
                 <p className="text-slate-500">
                   {mode === "extract"
                     ? "在左侧输入需要解析的文档文本并点击抽取，AI 将自动理解上下文并提取您需要的关键信息。"
-                    : "在左侧上传或粘贴文档内容，AI 将把全文转换为高保真 Markdown 格式。"}
+                    : mode === "markdown"
+                    ? "在左侧上传或粘贴文档内容，AI 将把全文转换为高保真 Markdown 格式。"
+                    : mode === "qa"
+                    ? "上传或粘贴文档内容，然后输入您的问题，AI 将从文档原文中找到答案并提供引用证据。"
+                    : mode === "validate"
+                    ? "上传或粘贴文档内容，AI 将检测日期冲突、金额不一致、缺失字段等合规问题。"
+                    : "上传或粘贴文档内容，AI 将按语义将文档拆分为条款卡片，便于快速浏览合同结构。"}
                 </p>
               </div>
             </motion.div>
@@ -685,5 +849,302 @@ function FieldCard({ field }: { field: ExtractedField }) {
         {field.value || <span className="text-slate-400 italic">空</span>}
       </div>
     </div>
+  );
+}
+
+function EvidenceCard({ item, index }: { item: QaEvidenceItem; index: number }) {
+  return (
+    <div className="rounded-xl border border-violet-200/60 bg-violet-50/40 overflow-hidden">
+      <div className="px-4 pt-3 pb-2 flex items-center gap-2">
+        <Quote className="w-3.5 h-3.5 text-violet-400 shrink-0" />
+        <span className="text-xs font-semibold text-violet-600">证据 {index + 1}</span>
+      </div>
+      <blockquote className="mx-4 mb-3 pl-3 border-l-2 border-violet-300 text-sm text-slate-800 leading-relaxed italic">
+        {item.quote}
+      </blockquote>
+      <div className="px-4 pb-3">
+        <p className="text-xs text-slate-500 leading-relaxed">{item.context}</p>
+      </div>
+    </div>
+  );
+}
+
+function QaResultPanel({ question, result }: { question: string; result: { answer: string; evidence: QaEvidenceItem[] } }) {
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <h2 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2">
+          <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+          问答结果
+        </h2>
+      </div>
+
+      <Card className="p-5 bg-gradient-to-br from-slate-50 to-slate-100/50 border-slate-200/60">
+        <div className="flex items-start gap-2 mb-1">
+          <MessageCircleQuestion className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+          <p className="text-sm font-semibold text-slate-700">{question}</p>
+        </div>
+      </Card>
+
+      <Card className="p-5 bg-gradient-to-br from-emerald-50 to-teal-50/30 border-emerald-100/60">
+        <h3 className="text-sm font-bold text-emerald-900 mb-2 flex items-center gap-1.5">
+          <Sparkles className="w-4 h-4 text-emerald-600" />
+          AI 回答
+        </h3>
+        <p className="text-sm text-slate-800 leading-relaxed">{result.answer}</p>
+      </Card>
+
+      {result.evidence.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+            <Quote className="w-4 h-4 text-violet-500" />
+            原文证据（共 {result.evidence.length} 条）
+          </h3>
+          {result.evidence.map((item, idx) => (
+            <EvidenceCard key={idx} item={item} index={idx} />
+          ))}
+        </div>
+      ) : (
+        <Card className="p-5 border-amber-200/60 bg-amber-50/40">
+          <p className="text-sm text-amber-700 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            文档中未找到相关原文证据
+          </p>
+        </Card>
+      )}
+    </>
+  );
+}
+
+const SEVERITY_CONFIG = {
+  error: {
+    icon: <XCircle className="w-4 h-4 text-rose-500 shrink-0" />,
+    badge: "error" as BadgeVariant,
+    label: "严重",
+    cardClass: "border-rose-200/60 bg-rose-50/40",
+    headerClass: "text-rose-700",
+  },
+  warning: {
+    icon: <TriangleAlert className="w-4 h-4 text-amber-500 shrink-0" />,
+    badge: "warning" as BadgeVariant,
+    label: "警告",
+    cardClass: "border-amber-200/60 bg-amber-50/40",
+    headerClass: "text-amber-700",
+  },
+  info: {
+    icon: <Info className="w-4 h-4 text-blue-500 shrink-0" />,
+    badge: "default" as BadgeVariant,
+    label: "提示",
+    cardClass: "border-blue-200/60 bg-blue-50/40",
+    headerClass: "text-blue-700",
+  },
+};
+
+const ISSUE_TYPE_LABELS: Record<string, string> = {
+  date_conflict: "日期冲突",
+  amount_inconsistency: "金额不一致",
+  missing_field: "缺少字段",
+  logic_error: "逻辑错误",
+  format_error: "格式错误",
+  other: "其他",
+};
+
+function IssueCard({ issue }: { issue: ValidateIssue }) {
+  const cfg = SEVERITY_CONFIG[issue.severity as keyof typeof SEVERITY_CONFIG] ?? SEVERITY_CONFIG.info;
+  return (
+    <div className={`rounded-xl border p-4 ${cfg.cardClass}`}>
+      <div className="flex items-start gap-2 mb-2">
+        {cfg.icon}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-sm font-semibold ${cfg.headerClass}`}>{issue.description}</span>
+            <Badge variant={cfg.badge} className="scale-90 origin-left">{cfg.label}</Badge>
+            <span className="text-xs text-slate-500 bg-white/70 px-2 py-0.5 rounded-full border border-slate-200/60">
+              {ISSUE_TYPE_LABELS[issue.type] ?? issue.type}
+            </span>
+          </div>
+          {issue.location && (
+            <p className="text-xs text-slate-500 mt-0.5">位置：{issue.location}</p>
+          )}
+        </div>
+      </div>
+      {issue.evidence && (
+        <blockquote className="mt-2 pl-3 border-l-2 border-slate-300 text-xs text-slate-600 leading-relaxed italic">
+          {issue.evidence}
+        </blockquote>
+      )}
+    </div>
+  );
+}
+
+function ValidateResultPanel({ result }: { result: { passed: boolean; summary: string; issues: ValidateIssue[] } }) {
+  const errors = result.issues.filter((i) => i.severity === "error");
+  const warnings = result.issues.filter((i) => i.severity === "warning");
+  const infos = result.issues.filter((i) => i.severity === "info");
+
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <h2 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2">
+          {result.passed ? (
+            <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+          ) : (
+            <XCircle className="w-6 h-6 text-rose-500" />
+          )}
+          规则校验结果
+        </h2>
+      </div>
+
+      <Card className={`p-5 ${result.passed
+        ? "bg-gradient-to-br from-emerald-50 to-teal-50/30 border-emerald-100/60"
+        : "bg-gradient-to-br from-rose-50 to-red-50/30 border-rose-100/60"}`}
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <ShieldCheck className={`w-4 h-4 ${result.passed ? "text-emerald-600" : "text-rose-600"}`} />
+          <span className={`text-sm font-bold ${result.passed ? "text-emerald-900" : "text-rose-900"}`}>
+            {result.passed ? "文档通过合规检查" : "文档存在合规问题"}
+          </span>
+        </div>
+        <p className="text-sm text-slate-700 leading-relaxed">{result.summary}</p>
+
+        {result.issues.length > 0 && (
+          <div className="mt-3 flex gap-3 flex-wrap">
+            {errors.length > 0 && (
+              <span className="text-xs font-medium text-rose-700 bg-rose-100 px-2.5 py-1 rounded-full">
+                {errors.length} 个严重问题
+              </span>
+            )}
+            {warnings.length > 0 && (
+              <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2.5 py-1 rounded-full">
+                {warnings.length} 个警告
+              </span>
+            )}
+            {infos.length > 0 && (
+              <span className="text-xs font-medium text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
+                {infos.length} 条提示
+              </span>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {result.issues.length > 0 ? (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-sm font-bold text-slate-700 flex items-center gap-1.5">
+            <AlertCircle className="w-4 h-4 text-slate-500" />
+            检测到的问题（共 {result.issues.length} 条）
+          </h3>
+          {result.issues.map((issue, idx) => (
+            <IssueCard key={idx} issue={issue} />
+          ))}
+        </div>
+      ) : (
+        <Card className="p-5 border-emerald-200/60 bg-emerald-50/40">
+          <p className="text-sm text-emerald-700 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            文档未检测到任何合规问题
+          </p>
+        </Card>
+      )}
+    </>
+  );
+}
+
+const CLAUSE_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string; border: string }> = {
+  preamble:     { label: "序言",   color: "text-slate-600",   bg: "bg-slate-100",   border: "border-slate-200" },
+  definitions:  { label: "定义",   color: "text-blue-600",    bg: "bg-blue-50",     border: "border-blue-200" },
+  obligations:  { label: "义务",   color: "text-indigo-600",  bg: "bg-indigo-50",   border: "border-indigo-200" },
+  payment:      { label: "付款",   color: "text-emerald-600", bg: "bg-emerald-50",  border: "border-emerald-200" },
+  deadline:     { label: "期限",   color: "text-orange-600",  bg: "bg-orange-50",   border: "border-orange-200" },
+  liability:    { label: "责任",   color: "text-rose-600",    bg: "bg-rose-50",     border: "border-rose-200" },
+  termination:  { label: "终止",   color: "text-red-600",     bg: "bg-red-50",      border: "border-red-200" },
+  dispute:      { label: "争议",   color: "text-yellow-600",  bg: "bg-yellow-50",   border: "border-yellow-200" },
+  signature:    { label: "签署",   color: "text-purple-600",  bg: "bg-purple-50",   border: "border-purple-200" },
+  misc:         { label: "附则",   color: "text-slate-500",   bg: "bg-slate-50",    border: "border-slate-200" },
+};
+
+function ClauseCardItem({ clause }: { clause: ClauseCard }) {
+  const [expanded, setExpanded] = useState(false);
+  const cfg = CLAUSE_TYPE_CONFIG[clause.type] ?? CLAUSE_TYPE_CONFIG["misc"]!;
+
+  return (
+    <div className={`rounded-xl border ${cfg.border} overflow-hidden`}>
+      <div
+        className={`px-4 py-3 flex items-start gap-3 cursor-pointer hover:brightness-95 transition-all ${cfg.bg}`}
+        onClick={() => setExpanded((p) => !p)}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap mb-0.5">
+            <span className="text-xs font-mono text-slate-400">#{String(clause.index).padStart(2, "0")}</span>
+            <span className="font-semibold text-sm text-slate-900">{clause.label}</span>
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+              {cfg.label}
+            </span>
+          </div>
+          <p className="text-xs text-slate-600 leading-relaxed">{clause.summary}</p>
+        </div>
+        {expanded
+          ? <ChevronUp className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+          : <ChevronDown className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+        }
+      </div>
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 py-3 border-t border-slate-100 bg-white">
+              <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{clause.content}</p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function SegmentResultPanel({ result }: { result: { clauses: ClauseCard[]; totalClauses: number } }) {
+  return (
+    <>
+      <div className="flex items-center gap-2">
+        <h2 className="text-2xl font-display font-bold text-slate-900 flex items-center gap-2">
+          <CheckCircle2 className="w-6 h-6 text-emerald-500" />
+          条款切分结果
+        </h2>
+        <span className="text-sm text-slate-500 font-normal">共 {result.totalClauses} 个条款</span>
+      </div>
+
+      <Card className="p-5 bg-gradient-to-br from-purple-50 to-indigo-50/30 border-purple-100/60">
+        <div className="flex items-center gap-2 mb-2">
+          <Scissors className="w-4 h-4 text-purple-600" />
+          <span className="text-sm font-bold text-purple-900">文档已按语义切分为 {result.clauses.length} 个条款卡片</span>
+        </div>
+        <div className="flex gap-2 flex-wrap mt-2">
+          {Array.from(new Set(result.clauses.map((c) => c.type))).map((type) => {
+            const cfg = CLAUSE_TYPE_CONFIG[type] ?? CLAUSE_TYPE_CONFIG["misc"]!;
+            const count = result.clauses.filter((c) => c.type === type).length;
+            return (
+              <span key={type} className={`text-xs font-medium px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color} ${cfg.border}`}>
+                {cfg.label} × {count}
+              </span>
+            );
+          })}
+        </div>
+      </Card>
+
+      <div className="flex flex-col gap-3">
+        {result.clauses.map((clause, idx) => (
+          <ClauseCardItem key={idx} clause={clause} />
+        ))}
+        {result.clauses.length === 0 && (
+          <Card className="p-5 border-amber-200/60 bg-amber-50/40">
+            <p className="text-sm text-amber-700">未能从文档中切分出条款</p>
+          </Card>
+        )}
+      </div>
+    </>
   );
 }

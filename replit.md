@@ -41,14 +41,23 @@ artifacts-monorepo/
 ## Key Features
 
 ### Document Extraction App (`artifacts/doc-extractor`)
-- **Home page**: Paste or upload document text, select extraction template (contract/invoice/resume/general/custom), click "开始抽取"
-- **Results**: Structured field cards (color-coded by confidence: high=green, medium=yellow, low=red), JSON view, AI summary
-- **Export**: JSON and CSV export buttons
-- **History page**: View all past extractions, click to see details, delete entries
-- **Templates**: 合同关键信息, 发票字段, 简历信息, 通用抽取, 自定义字段
+
+Five modes accessible via a 5-tab toggle:
+
+1. **结构化抽取** — Paste or upload document, select template (contract/invoice/resume/general/custom), get structured field cards with confidence levels + AI summary; export as JSON/CSV; saves to history
+2. **Markdown 转换** — Convert full document (including scanned PDFs up to 20 pages) to Markdown with cross-page table merging; preview rendered or raw; copy/download
+3. **智能问答** — Ask natural-language questions about the document; AI answers with verbatim citations from the original text (evidence cards)
+4. **规则校验** — Validate document for date conflicts, amount inconsistencies, missing required fields, logic errors, and format errors; issues shown by severity (error/warning/info) with verbatim evidence quotes
+5. **条款切分** — Split document into labeled clause cards; each card shows clause type, title, summary, and expandable full content
+
+File input: TXT, MD, PDF (including scanned via vision AI), Word (.docx/.doc), Excel (.xlsx/.xls), CSV, PPT (.pptx), images (PNG/JPG/GIF/BMP/WEBP)
 
 ### API Endpoints
-- `POST /api/extract` — Extract structured fields from document text using GPT-5.2
+- `POST /api/extract` — Extract structured fields (saves to DB)
+- `POST /api/markdown` — Convert document to Markdown (stateless)
+- `POST /api/qa` — Answer natural-language question with evidence citations (stateless)
+- `POST /api/validate` — Validate document for rule violations (stateless)
+- `POST /api/segment` — Segment document into clause cards (stateless)
 - `GET /api/history?limit=N` — Get extraction history
 - `GET /api/history/:id` — Get single extraction job
 - `DELETE /api/history/:id` — Delete extraction job
@@ -92,7 +101,9 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 
 Express 5 API server. Routes in `src/routes/`:
 - `health.ts` — GET /api/healthz
-- `extract.ts` — POST /api/extract, GET/DELETE /api/history routes
+- `extract.ts` — POST /api/extract, POST /api/markdown, POST /api/qa, POST /api/validate, POST /api/segment, GET/DELETE /api/history routes
+
+**Codegen note**: `lib/api-zod/src/index.ts` is manually maintained (not generated). Orval `indexFiles: false` prevents overwriting it. Always keep it as `export * from "./generated/api";`
 
 ### `artifacts/doc-extractor` (`@workspace/doc-extractor`)
 

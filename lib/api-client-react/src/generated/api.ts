@@ -26,7 +26,13 @@ import type {
   HistoryResponse,
   MarkdownExtractRequest,
   MarkdownExtractResponse,
+  QaRequest,
+  QaResponse,
+  SegmentRequest,
+  SegmentResponse,
   SuccessResponse,
+  ValidateRequest,
+  ValidateResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -199,6 +205,354 @@ export const useExtractDocument = <
   TContext
 > => {
   return useMutation(getExtractDocumentMutationOptions(options));
+};
+
+/**
+ * Converts any document (text or images) into a complete, high-fidelity Markdown representation. Cross-page tables are merged; images are replaced with detailed text descriptions.
+ * @summary Convert a document to full Markdown
+ */
+export const getMarkdownExtractUrl = () => {
+  return `/api/markdown-extract`;
+};
+
+export const markdownExtract = async (
+  markdownExtractRequest: MarkdownExtractRequest,
+  options?: RequestInit,
+): Promise<MarkdownExtractResponse> => {
+  return customFetch<MarkdownExtractResponse>(getMarkdownExtractUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(markdownExtractRequest),
+  });
+};
+
+export const getMarkdownExtractMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markdownExtract>>,
+    TError,
+    { data: BodyType<MarkdownExtractRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof markdownExtract>>,
+  TError,
+  { data: BodyType<MarkdownExtractRequest> },
+  TContext
+> => {
+  const mutationKey = ["markdownExtract"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof markdownExtract>>,
+    { data: BodyType<MarkdownExtractRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return markdownExtract(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MarkdownExtractMutationResult = NonNullable<
+  Awaited<ReturnType<typeof markdownExtract>>
+>;
+export type MarkdownExtractMutationBody = BodyType<MarkdownExtractRequest>;
+export type MarkdownExtractMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Convert a document to full Markdown
+ */
+export const useMarkdownExtract = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof markdownExtract>>,
+    TError,
+    { data: BodyType<MarkdownExtractRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof markdownExtract>>,
+  TError,
+  { data: BodyType<MarkdownExtractRequest> },
+  TContext
+> => {
+  return useMutation(getMarkdownExtractMutationOptions(options));
+};
+
+/**
+ * Answers a natural language question using document content, returning a concise answer and cited evidence quotes from the original text.
+ * @summary Answer a question about a document with evidence
+ */
+export const getDocumentQaUrl = () => {
+  return `/api/qa`;
+};
+
+export const documentQa = async (
+  qaRequest: QaRequest,
+  options?: RequestInit,
+): Promise<QaResponse> => {
+  return customFetch<QaResponse>(getDocumentQaUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(qaRequest),
+  });
+};
+
+export const getDocumentQaMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof documentQa>>,
+    TError,
+    { data: BodyType<QaRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof documentQa>>,
+  TError,
+  { data: BodyType<QaRequest> },
+  TContext
+> => {
+  const mutationKey = ["documentQa"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof documentQa>>,
+    { data: BodyType<QaRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return documentQa(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DocumentQaMutationResult = NonNullable<
+  Awaited<ReturnType<typeof documentQa>>
+>;
+export type DocumentQaMutationBody = BodyType<QaRequest>;
+export type DocumentQaMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Answer a question about a document with evidence
+ */
+export const useDocumentQa = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof documentQa>>,
+    TError,
+    { data: BodyType<QaRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof documentQa>>,
+  TError,
+  { data: BodyType<QaRequest> },
+  TContext
+> => {
+  return useMutation(getDocumentQaMutationOptions(options));
+};
+
+/**
+ * Detects date conflicts, amount inconsistencies, missing required fields, and other rule violations in a document.
+ * @summary Validate document rules and detect issues
+ */
+export const getValidateDocumentUrl = () => {
+  return `/api/validate`;
+};
+
+export const validateDocument = async (
+  validateRequest: ValidateRequest,
+  options?: RequestInit,
+): Promise<ValidateResponse> => {
+  return customFetch<ValidateResponse>(getValidateDocumentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(validateRequest),
+  });
+};
+
+export const getValidateDocumentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof validateDocument>>,
+    TError,
+    { data: BodyType<ValidateRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof validateDocument>>,
+  TError,
+  { data: BodyType<ValidateRequest> },
+  TContext
+> => {
+  const mutationKey = ["validateDocument"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof validateDocument>>,
+    { data: BodyType<ValidateRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return validateDocument(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ValidateDocumentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof validateDocument>>
+>;
+export type ValidateDocumentMutationBody = BodyType<ValidateRequest>;
+export type ValidateDocumentMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Validate document rules and detect issues
+ */
+export const useValidateDocument = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof validateDocument>>,
+    TError,
+    { data: BodyType<ValidateRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof validateDocument>>,
+  TError,
+  { data: BodyType<ValidateRequest> },
+  TContext
+> => {
+  return useMutation(getValidateDocumentMutationOptions(options));
+};
+
+/**
+ * Splits a document into clause-level segments, each with a label, type, and full text.
+ * @summary Segment document into labeled clause cards
+ */
+export const getSegmentDocumentUrl = () => {
+  return `/api/segment`;
+};
+
+export const segmentDocument = async (
+  segmentRequest: SegmentRequest,
+  options?: RequestInit,
+): Promise<SegmentResponse> => {
+  return customFetch<SegmentResponse>(getSegmentDocumentUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(segmentRequest),
+  });
+};
+
+export const getSegmentDocumentMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof segmentDocument>>,
+    TError,
+    { data: BodyType<SegmentRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof segmentDocument>>,
+  TError,
+  { data: BodyType<SegmentRequest> },
+  TContext
+> => {
+  const mutationKey = ["segmentDocument"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof segmentDocument>>,
+    { data: BodyType<SegmentRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return segmentDocument(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SegmentDocumentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof segmentDocument>>
+>;
+export type SegmentDocumentMutationBody = BodyType<SegmentRequest>;
+export type SegmentDocumentMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Segment document into labeled clause cards
+ */
+export const useSegmentDocument = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof segmentDocument>>,
+    TError,
+    { data: BodyType<SegmentRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof segmentDocument>>,
+  TError,
+  { data: BodyType<SegmentRequest> },
+  TContext
+> => {
+  return useMutation(getSegmentDocumentMutationOptions(options));
 };
 
 /**
@@ -465,90 +819,4 @@ export const useDeleteHistoryItem = <
   TContext
 > => {
   return useMutation(getDeleteHistoryItemMutationOptions(options));
-};
-
-/**
- * Converts a document to full Markdown
- * @summary Convert a document to full Markdown
- */
-export const getMarkdownExtractUrl = () => {
-  return `/api/markdown-extract`;
-};
-
-export const markdownExtract = async (
-  markdownExtractRequest: MarkdownExtractRequest,
-  options?: RequestInit,
-): Promise<MarkdownExtractResponse> => {
-  return customFetch<MarkdownExtractResponse>(getMarkdownExtractUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(markdownExtractRequest),
-  });
-};
-
-export const getMarkdownExtractMutationOptions = <
-  TError = ErrorType<ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof markdownExtract>>,
-    TError,
-    { data: BodyType<MarkdownExtractRequest> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof markdownExtract>>,
-  TError,
-  { data: BodyType<MarkdownExtractRequest> },
-  TContext
-> => {
-  const mutationKey = ["markdownExtract"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof markdownExtract>>,
-    { data: BodyType<MarkdownExtractRequest> }
-  > = (props) => {
-    const { data } = props ?? {};
-    return markdownExtract(data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type MarkdownExtractMutationResult = NonNullable<
-  Awaited<ReturnType<typeof markdownExtract>>
->;
-export type MarkdownExtractMutationBody = BodyType<MarkdownExtractRequest>;
-export type MarkdownExtractMutationError = ErrorType<ErrorResponse>;
-
-/**
- * @summary Convert a document to full Markdown
- */
-export const useMarkdownExtract = <
-  TError = ErrorType<ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof markdownExtract>>,
-    TError,
-    { data: BodyType<MarkdownExtractRequest> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof markdownExtract>>,
-  TError,
-  { data: BodyType<MarkdownExtractRequest> },
-  TContext
-> => {
-  return useMutation(getMarkdownExtractMutationOptions(options));
 };

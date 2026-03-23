@@ -88,6 +88,99 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /qa:
+    post:
+      operationId: documentQa
+      tags: [extraction]
+      summary: Answer a question about a document with evidence
+      description: Answers a natural language question using document content, returning a concise answer and cited evidence quotes from the original text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QaRequest"
+      responses:
+        "200":
+          description: Answer generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QaResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /validate:
+    post:
+      operationId: validateDocument
+      tags: [extraction]
+      summary: Validate document rules and detect issues
+      description: Detects date conflicts, amount inconsistencies, missing required fields, and other rule violations in a document.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ValidateRequest"
+      responses:
+        "200":
+          description: Validation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /segment:
+    post:
+      operationId: segmentDocument
+      tags: [extraction]
+      summary: Segment document into labeled clause cards
+      description: Splits a document into clause-level segments, each with a label, type, and full text.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SegmentRequest"
+      responses:
+        "200":
+          description: Segmentation completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SegmentResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /history:
     get:
       operationId: getHistory
@@ -319,3 +412,154 @@ components:
           description: The complete Markdown representation of the document
       required:
         - markdown
+    ValidateRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: The document text to validate (provide either text or imageData)
+        imageData:
+          type: array
+          items:
+            type: string
+          description: Base64-encoded image data URIs for image/scanned-PDF validation
+      anyOf:
+        - required: [text]
+        - required: [imageData]
+    ValidateIssue:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: [error, warning, info]
+          description: Issue severity level
+        type:
+          type: string
+          enum: [date_conflict, amount_inconsistency, missing_field, logic_error, format_error, other]
+          description: Category of the validation issue
+        description:
+          type: string
+          description: Human-readable description of the issue
+        location:
+          type: string
+          description: Where in the document the issue was found (clause, paragraph, or field reference)
+        evidence:
+          type: string
+          description: Verbatim quote from the document showing the problematic content
+      required:
+        - severity
+        - type
+        - description
+    ValidateResponse:
+      type: object
+      properties:
+        passed:
+          type: boolean
+          description: True if no errors were found (warnings/info may still be present)
+        summary:
+          type: string
+          description: One-sentence overall assessment of the document validity
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidateIssue"
+          description: Array of detected issues, sorted by severity
+      required:
+        - passed
+        - summary
+        - issues
+    SegmentRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: The document text to segment (provide either text or imageData)
+        imageData:
+          type: array
+          items:
+            type: string
+          description: Base64-encoded image data URIs for image/scanned-PDF segmentation
+      anyOf:
+        - required: [text]
+        - required: [imageData]
+    ClauseCard:
+      type: object
+      properties:
+        index:
+          type: integer
+          description: 1-based clause index
+        label:
+          type: string
+          description: Short title/label for the clause (e.g. "付款条款", "违约责任")
+        type:
+          type: string
+          enum: [definitions, obligations, payment, deadline, liability, termination, dispute, misc, preamble, signature]
+          description: Semantic type of the clause
+        content:
+          type: string
+          description: Full verbatim text of the clause
+        summary:
+          type: string
+          description: One-sentence plain-language summary of the clause
+      required:
+        - index
+        - label
+        - type
+        - content
+        - summary
+    SegmentResponse:
+      type: object
+      properties:
+        clauses:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClauseCard"
+          description: Ordered array of segmented clause cards
+        totalClauses:
+          type: integer
+          description: Total number of clauses found
+      required:
+        - clauses
+        - totalClauses
+    QaRequest:
+      type: object
+      properties:
+        text:
+          type: string
+          description: The document text to query (provide either text or imageData)
+        imageData:
+          type: array
+          items:
+            type: string
+          description: Base64-encoded image data URIs for image/scanned-PDF querying (provide either text or imageData)
+        question:
+          type: string
+          description: The natural language question to answer using the document
+      required:
+        - question
+    QaEvidenceItem:
+      type: object
+      properties:
+        quote:
+          type: string
+          description: Verbatim quote from the document that supports the answer
+        context:
+          type: string
+          description: Brief explanation of how this quote relates to the question
+      required:
+        - quote
+        - context
+    QaResponse:
+      type: object
+      properties:
+        answer:
+          type: string
+          description: Concise answer to the question, or an explicit statement that the document does not contain the answer
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/QaEvidenceItem"
+          description: Array of verbatim quotes from the document that support the answer
+      required:
+        - answer
+        - evidence

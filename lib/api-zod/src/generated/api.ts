@@ -23,11 +23,15 @@ export const ExtractDocumentBody = zod.object({
   text: zod
     .string()
     .optional()
-    .describe("The document text to extract information from (provide either text or imageData)"),
+    .describe(
+      "The document text to extract information from (provide either text or imageData)",
+    ),
   imageData: zod
     .array(zod.string())
     .optional()
-    .describe("Base64-encoded image data URIs for image/scanned-PDF extraction (provide either text or imageData)"),
+    .describe(
+      "Base64-encoded image data URIs for image\/scanned-PDF extraction (provide either text or imageData)",
+    ),
   template: zod
     .enum(["contract", "invoice", "resume", "general", "custom"])
     .describe("The extraction template to use"),
@@ -35,8 +39,6 @@ export const ExtractDocumentBody = zod.object({
     .array(zod.string())
     .optional()
     .describe("Custom field names to extract (used when template is 'custom')"),
-}).refine((d) => (d.text != null && d.text.trim().length > 0) || (d.imageData != null && d.imageData.length > 0), {
-  message: "Either text or imageData must be provided",
 });
 
 export const ExtractDocumentResponse = zod.object({
@@ -59,6 +61,202 @@ export const ExtractDocumentResponse = zod.object({
     .optional()
     .describe("AI-generated summary of extracted information"),
   createdAt: zod.date(),
+});
+
+/**
+ * Converts any document (text or images) into a complete, high-fidelity Markdown representation. Cross-page tables are merged; images are replaced with detailed text descriptions.
+ * @summary Convert a document to full Markdown
+ */
+export const MarkdownExtractBody = zod.object({
+  text: zod
+    .string()
+    .optional()
+    .describe(
+      "The document text to convert (provide either text or imageData)",
+    ),
+  imageData: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Base64-encoded image data URIs for image\/scanned-PDF conversion (provide either text or imageData)",
+    ),
+});
+
+export const MarkdownExtractResponse = zod.object({
+  markdown: zod
+    .string()
+    .describe("The complete Markdown representation of the document"),
+});
+
+/**
+ * Answers a natural language question using document content, returning a concise answer and cited evidence quotes from the original text.
+ * @summary Answer a question about a document with evidence
+ */
+export const DocumentQaBody = zod.object({
+  text: zod
+    .string()
+    .optional()
+    .describe("The document text to query (provide either text or imageData)"),
+  imageData: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Base64-encoded image data URIs for image\/scanned-PDF querying (provide either text or imageData)",
+    ),
+  question: zod
+    .string()
+    .describe("The natural language question to answer using the document"),
+});
+
+export const DocumentQaResponse = zod.object({
+  answer: zod
+    .string()
+    .describe(
+      "Concise answer to the question, or an explicit statement that the document does not contain the answer",
+    ),
+  evidence: zod
+    .array(
+      zod.object({
+        quote: zod
+          .string()
+          .describe(
+            "Verbatim quote from the document that supports the answer",
+          ),
+        context: zod
+          .string()
+          .describe(
+            "Brief explanation of how this quote relates to the question",
+          ),
+      }),
+    )
+    .describe(
+      "Array of verbatim quotes from the document that support the answer",
+    ),
+});
+
+/**
+ * Detects date conflicts, amount inconsistencies, missing required fields, and other rule violations in a document.
+ * @summary Validate document rules and detect issues
+ */
+export const ValidateDocumentBody = zod
+  .union([zod.unknown(), zod.unknown()])
+  .and(
+    zod.object({
+      text: zod
+        .string()
+        .optional()
+        .describe(
+          "The document text to validate (provide either text or imageData)",
+        ),
+      imageData: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Base64-encoded image data URIs for image\/scanned-PDF validation",
+        ),
+    }),
+  );
+
+export const ValidateDocumentResponse = zod.object({
+  passed: zod
+    .boolean()
+    .describe(
+      "True if no errors were found (warnings\/info may still be present)",
+    ),
+  summary: zod
+    .string()
+    .describe("One-sentence overall assessment of the document validity"),
+  issues: zod
+    .array(
+      zod.object({
+        severity: zod
+          .enum(["error", "warning", "info"])
+          .describe("Issue severity level"),
+        type: zod
+          .enum([
+            "date_conflict",
+            "amount_inconsistency",
+            "missing_field",
+            "logic_error",
+            "format_error",
+            "other",
+          ])
+          .describe("Category of the validation issue"),
+        description: zod
+          .string()
+          .describe("Human-readable description of the issue"),
+        location: zod
+          .string()
+          .optional()
+          .describe(
+            "Where in the document the issue was found (clause, paragraph, or field reference)",
+          ),
+        evidence: zod
+          .string()
+          .optional()
+          .describe(
+            "Verbatim quote from the document showing the problematic content",
+          ),
+      }),
+    )
+    .describe("Array of detected issues, sorted by severity"),
+});
+
+/**
+ * Splits a document into clause-level segments, each with a label, type, and full text.
+ * @summary Segment document into labeled clause cards
+ */
+export const SegmentDocumentBody = zod
+  .union([zod.unknown(), zod.unknown()])
+  .and(
+    zod.object({
+      text: zod
+        .string()
+        .optional()
+        .describe(
+          "The document text to segment (provide either text or imageData)",
+        ),
+      imageData: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          "Base64-encoded image data URIs for image\/scanned-PDF segmentation",
+        ),
+    }),
+  );
+
+export const SegmentDocumentResponse = zod.object({
+  clauses: zod
+    .array(
+      zod.object({
+        index: zod.number().describe("1-based clause index"),
+        label: zod
+          .string()
+          .describe(
+            'Short title\/label for the clause (e.g. \"付款条款\", \"违约责任\")',
+          ),
+        type: zod
+          .enum([
+            "definitions",
+            "obligations",
+            "payment",
+            "deadline",
+            "liability",
+            "termination",
+            "dispute",
+            "misc",
+            "preamble",
+            "signature",
+          ])
+          .describe("Semantic type of the clause"),
+        content: zod.string().describe("Full verbatim text of the clause"),
+        summary: zod
+          .string()
+          .describe("One-sentence plain-language summary of the clause"),
+      }),
+    )
+    .describe("Ordered array of segmented clause cards"),
+  totalClauses: zod.number().describe("Total number of clauses found"),
 });
 
 /**
@@ -133,32 +331,4 @@ export const DeleteHistoryItemParams = zod.object({
 
 export const DeleteHistoryItemResponse = zod.object({
   success: zod.boolean(),
-});
-
-/**
- * Converts a document to full Markdown
- * @summary Convert a document to full Markdown
- */
-export const MarkdownExtractBody = zod
-  .object({
-    text: zod
-      .string()
-      .optional()
-      .describe("The document text to convert (provide either text or imageData)"),
-    imageData: zod
-      .array(zod.string())
-      .optional()
-      .describe(
-        "Base64-encoded image data URIs for image/scanned-PDF conversion (provide either text or imageData)",
-      ),
-  })
-  .refine(
-    (d) =>
-      (d.text != null && d.text.trim().length > 0) ||
-      (d.imageData != null && d.imageData.length > 0),
-    { message: "Either text or imageData must be provided" },
-  );
-
-export const MarkdownExtractResponse = zod.object({
-  markdown: zod.string().describe("The complete Markdown representation of the document"),
 });
