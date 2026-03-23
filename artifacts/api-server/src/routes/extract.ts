@@ -17,6 +17,22 @@ import {
 
 const router: IRouter = Router();
 
+function requireDocumentContent(
+  body: { text?: string; imageData?: string[] },
+  res: import("express").Response
+): boolean {
+  const hasText = typeof body.text === "string" && body.text.trim().length > 0;
+  const hasImages = Array.isArray(body.imageData) && body.imageData.length > 0;
+  if (!hasText && !hasImages) {
+    res.status(400).json({
+      error: "invalid_request",
+      message: "请提供文档内容：text（文本）或 imageData（图片数组）必须至少有一项",
+    });
+    return false;
+  }
+  return true;
+}
+
 const TEMPLATE_PROMPTS: Record<string, string> = {
   contract: `请从以下合同文档中提取关键信息，包括但不限于：
 - 合同双方（甲方、乙方）
@@ -149,6 +165,8 @@ router.post("/extract", async (req, res) => {
     res.status(400).json({ error: "invalid_request", message: String(err) });
     return;
   }
+
+  if (!requireDocumentContent(body, res)) return;
 
   try {
     const { text, imageData, template, customFields } = body;
@@ -330,6 +348,8 @@ router.post("/markdown-extract", async (req, res) => {
     return;
   }
 
+  if (!requireDocumentContent(body, res)) return;
+
   try {
     const { text, imageData } = body;
 
@@ -447,6 +467,8 @@ router.post("/validate", async (req, res) => {
     return;
   }
 
+  if (!requireDocumentContent(body, res)) return;
+
   try {
     const { text, imageData } = body;
 
@@ -524,6 +546,8 @@ router.post("/segment", async (req, res) => {
     res.status(400).json({ error: "invalid_request", message: String(err) });
     return;
   }
+
+  if (!requireDocumentContent(body, res)) return;
 
   try {
     const { text, imageData } = body;
@@ -616,6 +640,8 @@ router.post("/qa", async (req, res) => {
     res.status(400).json({ error: "invalid_request", message: String(err) });
     return;
   }
+
+  if (!requireDocumentContent(body, res)) return;
 
   try {
     const { text, imageData, question } = body;
