@@ -1,0 +1,42 @@
+# ── Stage 1: install & build ──────────────────────────────────────────────────
+FROM node:24-alpine AS builder
+
+RUN npm install -g pnpm@latest
+
+WORKDIR /build
+
+# Copy workspace manifest files first (better layer caching)
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+
+# Copy packages needed to build the API server
+COPY lib/api-zod/           ./lib/api-zod/
+COPY lib/db/                ./lib/db/
+COPY lib/integrations-openai-ai-server/ ./lib/integrations-openai-ai-server/
+COPY artifacts/api-server/  ./artifacts/api-server/
+
+# Install only the dependencies needed for the API build
+RUN pnpm install --frozen-lockfile --filter @workspace/api-server...
+
+# Bundle the API server with esbuild (output: artifacts/api-server/dist/)
+RUN pnpm --filter @workspace/api-server run build
+
+# ── Stage 2: lightweight runtime ──────────────────────────────────────────────
+FROM node:24-alpine AS runtime
+
+# postgresql-client provides pg_isready and psql for startup health-check + migration
+RUN apk add --no-cache postgresql-client
+
+WORKDIR /app
+
+# Copy only the self-contained esbuild bundle (no node_modules needed)
+COPY --from=builder /build/artifacts/api-server/dist ./dist
+
+# Copy the DB initialisation SQL and the entrypoint script
+COPY docker/init.sql      ./init.sql
+COPY docker/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
+ENV NODE_ENV=production
+EXPOSE 3001
+
+ENTRYPOINT ["/app/entrypoint.sh"]

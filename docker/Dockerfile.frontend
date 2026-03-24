@@ -1,0 +1,35 @@
+# ── Stage 1: build the Vite app ───────────────────────────────────────────────
+FROM node:24-alpine AS builder
+
+RUN npm install -g pnpm@latest
+
+WORKDIR /build
+
+# Copy workspace manifest files first (better layer caching)
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+
+# Copy packages the frontend depends on at build time
+COPY lib/api-client-react/      ./lib/api-client-react/
+COPY artifacts/doc-extractor/   ./artifacts/doc-extractor/
+COPY attached_assets/           ./attached_assets/
+
+# Install only what the frontend needs
+RUN pnpm install --frozen-lockfile --filter @workspace/doc-extractor...
+
+# Build the static site.
+# BASE_PATH=/ puts the app at the root (not /doc-extractor/ as in Replit).
+RUN BASE_PATH=/ NODE_ENV=production \
+    pnpm --filter @workspace/doc-extractor run build
+
+# ── Stage 2: serve with nginx ─────────────────────────────────────────────────
+FROM nginx:1.27-alpine AS runtime
+
+# Remove the default nginx config and copy ours
+RUN rm /etc/nginx/conf.d/default.conf
+COPY docker/nginx.conf /etc/nginx/nginx.conf
+
+# Copy the compiled static assets
+COPY --from=builder /build/artifacts/doc-extractor/dist/public /usr/share/nginx/html
+
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
